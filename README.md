@@ -44,7 +44,7 @@ npm run build
 
 ## 部署说明
 
-`public/ffmpeg/ffmpeg-core.wasm` 大约 32 MB。部署平台需要允许单个静态文件超过 32 MB；如果平台限制更低，可将 FFmpeg 核心文件改为从 CDN 按需加载。
+FFmpeg WebAssembly 核心约 32 MB，音频或视频转换首次使用时会从版本锁定的 CDN 按需加载，不会进入部署平台的静态资源包。
 
 百度统计接入已预留环境变量：
 

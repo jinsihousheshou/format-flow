@@ -67,6 +67,43 @@ const toolGroups: { id: ToolCategory; title: string; description: string; icon: 
   { id: "video", title: "视频格式转换", description: "常见视频容器与播放格式", icon: FileVideoCamera, accent: "from-violet-500 to-fuchsia-500" },
 ];
 
+type ToBlobURL = (url: string, mimeType: string) => Promise<string>;
+type FFmpegCoreAssets = { coreURL: string; wasmURL: string };
+
+const ffmpegCoreCdnBaseUrls = [
+  "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+  "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
+];
+
+let ffmpegCoreAssetsPromise: Promise<FFmpegCoreAssets> | null = null;
+
+const loadFFmpegCoreAssets = (toBlobURL: ToBlobURL) => {
+  if (!ffmpegCoreAssetsPromise) {
+    ffmpegCoreAssetsPromise = (async () => {
+      let lastError: unknown;
+
+      for (const baseUrl of ffmpegCoreCdnBaseUrls) {
+        try {
+          const [coreURL, wasmURL] = await Promise.all([
+            toBlobURL(`${baseUrl}/ffmpeg-core.js`, "text/javascript"),
+            toBlobURL(`${baseUrl}/ffmpeg-core.wasm`, "application/wasm"),
+          ]);
+          return { coreURL, wasmURL };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw lastError instanceof Error ? lastError : new Error("无法加载 FFmpeg CDN 核心文件");
+    })().catch((error) => {
+      ffmpegCoreAssetsPromise = null;
+      throw error;
+    });
+  }
+
+  return ffmpegCoreAssetsPromise;
+};
+
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -188,20 +225,21 @@ export default function Home() {
 
     setConverting(true);
     setProgress(2);
-    setMessage("正在加载本地音频转换引擎（首次约 32MB）...");
+    setMessage("正在从 CDN 加载音频转换引擎（首次约 32MB）...");
 
     try {
-      const [{ FFmpeg }, { fetchFile }] = await Promise.all([import("@ffmpeg/ffmpeg"), import("@ffmpeg/util")]);
+      const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([import("@ffmpeg/ffmpeg"), import("@ffmpeg/util")]);
       const ffmpeg = new FFmpeg();
       ffmpeg.on("progress", ({ progress: currentProgress }) => {
         if (Number.isFinite(currentProgress)) {
           setProgress(Math.max(10, Math.min(96, Math.round(currentProgress * 100))));
         }
       });
+      const { coreURL, wasmURL } = await loadFFmpegCoreAssets(toBlobURL);
       await ffmpeg.load({
         classWorkerURL: `${window.location.origin}/ffmpeg/worker.js`,
-        coreURL: `${window.location.origin}/ffmpeg/ffmpeg-core.js`,
-        wasmURL: `${window.location.origin}/ffmpeg/ffmpeg-core.wasm`,
+        coreURL,
+        wasmURL,
       });
 
       setProgress(10);
@@ -254,20 +292,21 @@ export default function Home() {
 
     setConverting(true);
     setProgress(2);
-    setMessage("正在加载本地视频转换引擎（首次约 32MB）...");
+    setMessage("正在从 CDN 加载视频转换引擎（首次约 32MB）...");
 
     try {
-      const [{ FFmpeg }, { fetchFile }] = await Promise.all([import("@ffmpeg/ffmpeg"), import("@ffmpeg/util")]);
+      const [{ FFmpeg }, { fetchFile, toBlobURL }] = await Promise.all([import("@ffmpeg/ffmpeg"), import("@ffmpeg/util")]);
       const ffmpeg = new FFmpeg();
       ffmpeg.on("progress", ({ progress: currentProgress }) => {
         if (Number.isFinite(currentProgress)) {
           setProgress(Math.max(10, Math.min(96, Math.round(currentProgress * 100))));
         }
       });
+      const { coreURL, wasmURL } = await loadFFmpegCoreAssets(toBlobURL);
       await ffmpeg.load({
         classWorkerURL: `${window.location.origin}/ffmpeg/worker.js`,
-        coreURL: `${window.location.origin}/ffmpeg/ffmpeg-core.js`,
-        wasmURL: `${window.location.origin}/ffmpeg/ffmpeg-core.wasm`,
+        coreURL,
+        wasmURL,
       });
 
       setProgress(10);
