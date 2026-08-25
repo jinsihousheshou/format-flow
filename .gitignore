@@ -8,3 +8,5 @@ dist
 !.env.example
 tmp/
 *.tsbuildinfo
+.vinext/
+.wrangler/
