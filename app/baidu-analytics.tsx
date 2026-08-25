@@ -1,6 +1,8 @@
 import Script from "next/script";
 
-const rawSiteId = process.env.NEXT_PUBLIC_BAIDU_TONGJI_ID?.trim();
+const defaultSiteId = "538aee010031dc4405ba0384f37ce9fa";
+const rawSiteId =
+  process.env.NEXT_PUBLIC_BAIDU_TONGJI_ID?.trim() || defaultSiteId;
 const siteId =
   rawSiteId && /^[a-zA-Z0-9_-]+$/.test(rawSiteId) ? rawSiteId : null;
 
