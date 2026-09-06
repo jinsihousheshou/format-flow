@@ -1,5 +1,22 @@
 project_id = "format-flow"
 
+[auth]
+site_url = "https://jinsihousheshou.github.io/format-flow/"
+additional_redirect_urls = ["http://localhost:3000/account/", "https://jinsihousheshou.github.io/format-flow/account/"]
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = false
+max_frequency = "1m"
+otp_length = 8
+otp_expiry = 3600
+
 [functions.redeem-code]
 verify_jwt = true
 
