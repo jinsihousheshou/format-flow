@@ -23,7 +23,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }: { op
       if (mode !== "redeem" && !email.trim()) throw new Error("请输入邮箱地址。");
       if ((mode === "login" || mode === "signup") && password.length < 8) throw new Error("密码至少需要 8 位。");
       if (mode === "signup" && password !== confirmPassword) throw new Error("两次输入的密码不一致。");
-      if (mode === "login") { await auth.signIn(email, password); setMessage("登录成功。"); }
+      if (mode === "login") { await auth.signIn(email, password); onClose(); }
       if (mode === "signup") {
         const result = await auth.signUp(email, password);
         setMode("login");
@@ -32,7 +32,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }: { op
         setMessage(`${result} 验证完成后，请在这里登录。`);
       }
       if (mode === "reset") { await auth.sendPasswordReset(email); setMessage("重置邮件已发送，请检查邮箱。"); }
-      if (mode === "redeem") { await auth.redeemCode(code); setMessage("激活成功，现在可以开始转换。"); }
+      if (mode === "redeem") { await auth.redeemCode(code); onClose(); }
     } catch (error) { setMessage(error instanceof Error ? error.message : "操作失败，请重试。"); }
     finally { setBusy(false); }
   };
