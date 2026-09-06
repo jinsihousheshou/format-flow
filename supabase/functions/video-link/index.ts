@@ -9,6 +9,48 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
 type Reservation = { actionId: string; maxVideoBytes: number; dailyLimit: number; usedToday: number };
 type Inspection = { response: Response; finalUrl: URL; contentType: string; contentLength: number; title: string };
 
+async function resolveDouyinVideoId(startUrl: URL) {
+  let current = startUrl;
+  for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+    const host = validatePublicUrlShape(current);
+    if (detectVideoPlatform(host) !== "douyin") throw new Error("抖音短链跳转到了未允许的域名。");
+    const pathId = current.pathname.match(/\/(?:share\/)?video\/(\d{15,25})/i)?.[1];
+    const modalId = current.searchParams.get("modal_id")?.match(/^\d{15,25}$/)?.[0];
+    if (pathId || modalId) return pathId || modalId!;
+    await assertPublicDns(host);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), INSPECT_TIMEOUT_MS);
+    let response: Response;
+    try { response = await fetch(current, { method: "HEAD", redirect: "manual", signal: controller.signal }); }
+    finally { clearTimeout(timeout); }
+    if (![301, 302, 303, 307, 308].includes(response.status)) throw new Error("该抖音链接不是单个公开视频分享链接。");
+    if (redirect === MAX_REDIRECTS) throw new Error("抖音短链重定向次数过多。");
+    const location = response.headers.get("location");
+    if (!location) throw new Error("抖音短链返回了无效重定向。");
+    current = new URL(location, current);
+  }
+  throw new Error("无法识别抖音视频 ID。");
+}
+
+async function inspectDouyin(url: URL) {
+  const videoId = await resolveDouyinVideoId(url);
+  const endpoint = new URL("https://open.douyin.com/api/douyin/v1/video/get_iframe_by_video");
+  endpoint.searchParams.set("video_id", videoId);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), INSPECT_TIMEOUT_MS);
+  let response: Response;
+  try { response = await fetch(endpoint, { signal: controller.signal, headers: { Accept: "application/json" } }); }
+  finally { clearTimeout(timeout); }
+  if (!response.ok) throw new Error(`抖音官方解析接口返回 HTTP ${response.status}。`);
+  const payload = await response.json();
+  if (payload.err_no !== 0 || !payload.data?.iframe_code) throw new Error(payload.err_msg || "该视频不是可公开预览的视频。");
+  const src = String(payload.data.iframe_code).match(/\bsrc=["'](https:\/\/[^"']+)["']/i)?.[1];
+  if (!src) throw new Error("抖音官方播放器地址无效。");
+  const embedUrl = new URL(src.replaceAll("&amp;", "&"));
+  if (embedUrl.hostname !== "open.douyin.com" || embedUrl.pathname !== "/player/video" || embedUrl.searchParams.get("vid") !== videoId) throw new Error("抖音官方播放器地址未通过安全检查。");
+  return { title: String(payload.data.video_title || "抖音公开视频").slice(0, 200), width: Number(payload.data.video_width) || null, height: Number(payload.data.video_height) || null, embedUrl: embedUrl.toString() };
+}
+
 async function requireUser(request: Request) {
   const client = userClient(request);
   const { data: { user }, error } = await client.auth.getUser();
@@ -123,6 +165,22 @@ Deno.serve(async (request) => {
     if (!action) return json(request, { error: "请求类型无效。" }, 400);
     const reserved = await reserve(client, action, platform, host);
     actionId = reserved.actionId;
+
+    if (platform === "douyin") {
+      if (action === "download") {
+        await finish(client, actionId, "failed", { errorCode: "DOWNLOAD_NOT_AVAILABLE" });
+        return json(request, { error: "抖音官方目前只开放公开视频播放器，没有提供可下载的 MP4 地址。", code: "DOWNLOAD_NOT_AVAILABLE", platform }, 422);
+      }
+      const inspected = await inspectDouyin(url);
+      await finish(client, actionId, "completed", { title: inspected.title, contentType: "text/html" });
+      return json(request, {
+        platform, title: inspected.title, coverUrl: null, durationSeconds: null,
+        width: inspected.width, height: inspected.height, embedUrl: inspected.embedUrl,
+        contentType: "text/html", contentLength: 0, qualities: [], downloadAvailable: false,
+        notice: "已通过抖音官方公开接口解析，可在线播放；官方未提供直接下载地址。",
+        usage: { usedToday: reserved.usedToday, dailyLimit: reserved.dailyLimit },
+      });
+    }
 
     if (platform !== "direct") {
       await finish(client, actionId, "failed", { errorCode: "PLATFORM_MAINTENANCE" });
