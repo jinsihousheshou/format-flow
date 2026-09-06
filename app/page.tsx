@@ -11,8 +11,9 @@ import {
   FileVideoCamera,
   Images,
   LoaderCircle,
+  KeyRound,
+  LogIn,
   Menu,
-  Merge,
   MousePointer2,
   Plus,
   ShieldCheck,
@@ -22,6 +23,9 @@ import {
   Zap,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
+import AuthModal from "../components/auth-modal";
+import { useAuth } from "../components/auth-provider";
 import DocumentShowcaseCarousel from "../components/ui/document-showcase-carousel";
 import { useRef, useState } from "react";
 
@@ -73,9 +77,7 @@ const tools: ToolItem[] = [
   { from: "JPG", to: "PNG", label: "JPG 转 PNG", icon: Images, color: "from-blue-500 to-cyan-400", tint: "bg-blue-50 text-blue-600", category: "image" },
   { from: "PNG", to: "JPG", label: "PNG 转 JPG", icon: FileImage, color: "from-violet-500 to-purple-400", tint: "bg-violet-50 text-violet-600", category: "image" },
   { from: "WEBP", to: "JPG", label: "WEBP 转 JPG", icon: Sparkles, color: "from-fuchsia-500 to-pink-400", tint: "bg-fuchsia-50 text-fuchsia-600", category: "image" },
-  { from: "IMG", to: "PDF", label: "图片转 PDF", icon: FileText, color: "from-indigo-500 to-blue-400", tint: "bg-indigo-50 text-indigo-600", category: "image" },
   { from: "PDF", to: "JPG", label: "PDF 转 JPG", icon: FileImage, color: "from-orange-500 to-amber-400", tint: "bg-orange-50 text-orange-600", category: "document", mode: "pdf-jpg" },
-  { from: "PDF", to: "PDF", label: "PDF 合并", icon: Merge, color: "from-emerald-500 to-teal-400", tint: "bg-emerald-50 text-emerald-600", category: "document" },
   { from: "MP3", to: "WAV", label: "MP3 转 WAV", icon: FileAudio, color: "from-cyan-500 to-blue-500", tint: "bg-cyan-50 text-cyan-600", category: "audio", mode: "audio", audioOutput: "wav" },
   { from: "WAV", to: "MP3", label: "WAV 转 MP3", icon: FileAudio, color: "from-pink-500 to-rose-500", tint: "bg-pink-50 text-pink-600", category: "audio", mode: "audio", audioOutput: "mp3" },
   { from: "M4A", to: "MP3", label: "M4A 转 MP3", icon: FileAudio, color: "from-teal-500 to-emerald-500", tint: "bg-teal-50 text-teal-600", category: "audio", mode: "audio", audioOutput: "mp3" },
@@ -105,8 +107,9 @@ const loadFFmpegCoreAssets = (toBlobURL: ToBlobURL) => {
   if (!ffmpegCoreAssetsPromise) {
     ffmpegCoreAssetsPromise = (async () => {
       let lastError: unknown;
+      const localBaseUrl = `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/ffmpeg`;
 
-      for (const baseUrl of ffmpegCoreCdnBaseUrls) {
+      for (const baseUrl of [localBaseUrl, ...ffmpegCoreCdnBaseUrls]) {
         try {
           const [coreURL, wasmURL] = await Promise.all([
             toBlobURL(`${baseUrl}/ffmpeg-core.js`, "text/javascript"),
@@ -129,7 +132,10 @@ const loadFFmpegCoreAssets = (toBlobURL: ToBlobURL) => {
 };
 
 export default function Home() {
+  const auth = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "redeem">("login");
   const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [activeShowcaseIndex, setActiveShowcaseIndex] = useState(0);
   const [personalShowcaseWorks, setPersonalShowcaseWorks] = useState<ShowcaseWork[]>([]);
@@ -147,6 +153,23 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const showcaseInputRef = useRef<HTMLInputElement>(null);
   const showcaseSlides = [...personalShowcaseWorks, ...showcaseWorks];
+  const entitlement = auth.account.entitlement;
+  const hasActiveEntitlement = Boolean(entitlement && entitlement.status === "active" && (!entitlement.expires_at || new Date(entitlement.expires_at) > new Date()) && (entitlement.remaining_conversions === null || entitlement.remaining_conversions > 0));
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+  const openAuthorization = (mode: "login" | "redeem" = auth.session ? "redeem" : "login") => {
+    setAuthMode(mode);
+    setAuthOpen(true);
+  };
+
+  const requestFileSelection = () => {
+    if (!hasActiveEntitlement) {
+      setMessage("该功能需要激活后使用，请先登录并输入兑换码。");
+      openAuthorization();
+      return;
+    }
+    inputRef.current?.click();
+  };
 
   const selectShowcaseFile = (file?: File) => {
     if (!file) return;
@@ -176,6 +199,13 @@ export default function Home() {
 
   const selectFile = (file?: File) => {
     if (!file) return;
+    if (!hasActiveEntitlement) {
+      setMessage("该功能需要激活后使用，请先登录并输入兑换码。");
+      openAuthorization();
+      return;
+    }
+    if (file.size === 0) { setMessage("文件内容为空，请重新选择。"); return; }
+    if (file.size > 50 * 1024 * 1024) { setMessage("文件超过 50MB，请选择较小的文件。"); return; }
     setProgress(0);
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     const normalizedExtension = extension === "jpeg" ? "jpg" : extension;
@@ -208,6 +238,21 @@ export default function Home() {
     }
   };
 
+  const authorizeSelectedFile = async (kind: ToolCategory, outputFormat: string) => {
+    if (!selectedFile || !hasActiveEntitlement) {
+      setMessage("该功能需要激活后使用，请先登录并输入兑换码。");
+      openAuthorization();
+      return null;
+    }
+    const inputFormat = selectedFile.name.split(".").pop()?.toLowerCase() || "unknown";
+    try {
+      return await auth.reserveConversion({ kind, inputFormat, outputFormat, fileSize: selectedFile.size });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "权限验证失败，请重新登录后重试。");
+      return null;
+    }
+  };
+
   const downloadBlob = (blob: Blob, fileName: string) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -226,6 +271,8 @@ export default function Home() {
       setMessage("请选择 JPG、PNG 或 WEBP 图片后再转换。");
       return;
     }
+    const reservation = await authorizeSelectedFile("image", imageFormat);
+    if (!reservation) return;
 
     setConverting(true);
     setProgress(20);
@@ -259,9 +306,11 @@ export default function Home() {
       downloadBlob(blob, `${baseName}.${imageFormat}`);
       setProgress(100);
       setMessage(`转换完成，${imageFormat.toUpperCase()} 图片已开始下载。`);
+      await auth.finishConversion(reservation.conversionId, "completed");
     } catch (error) {
       console.error(error);
       setMessage("图片转换失败，请确认图片文件完整后重试。");
+      await auth.finishConversion(reservation.conversionId, "failed", error instanceof Error ? error.message : "图片转换失败");
     } finally {
       setConverting(false);
     }
@@ -273,6 +322,8 @@ export default function Home() {
       setMessage("请选择 PDF 文件后再转换。");
       return;
     }
+    const reservation = await authorizeSelectedFile("document", imageFormat);
+    if (!reservation) return;
 
     setConverting(true);
     setProgress(0);
@@ -327,9 +378,11 @@ export default function Home() {
       await loadingTask.destroy();
       setProgress(100);
       setMessage(`转换完成，${pdf.numPages === 1 ? `${imageFormat.toUpperCase()} 图片` : "ZIP 压缩包"}已开始下载。`);
+      await auth.finishConversion(reservation.conversionId, "completed");
     } catch (error) {
       console.error(error);
       setMessage("转换失败。请确认 PDF 没有损坏或设置密码，然后重试。");
+      await auth.finishConversion(reservation.conversionId, "failed", error instanceof Error ? error.message : "PDF 转换失败");
     } finally {
       setConverting(false);
     }
@@ -342,6 +395,8 @@ export default function Home() {
       setMessage("请选择音频文件后再转换。");
       return;
     }
+    const reservation = await authorizeSelectedFile("audio", audioFormat);
+    if (!reservation) return;
 
     setConverting(true);
     setProgress(2);
@@ -357,7 +412,7 @@ export default function Home() {
       });
       const { coreURL, wasmURL } = await loadFFmpegCoreAssets(toBlobURL);
       await ffmpeg.load({
-        classWorkerURL: `${window.location.origin}/ffmpeg/worker.js`,
+        classWorkerURL: `${window.location.origin}${basePath}/ffmpeg/worker.js`,
         coreURL,
         wasmURL,
       });
@@ -398,9 +453,11 @@ export default function Home() {
 
       setProgress(100);
       setMessage(`转换完成，${audioFormat.toUpperCase()} 文件已开始下载。`);
+      await auth.finishConversion(reservation.conversionId, "completed");
     } catch (error) {
       console.error(error);
       setMessage("音频转换失败。请更换文件或输出格式后重试。");
+      await auth.finishConversion(reservation.conversionId, "failed", error instanceof Error ? error.message : "音频转换失败");
     } finally {
       setConverting(false);
     }
@@ -413,6 +470,8 @@ export default function Home() {
       setMessage("请选择视频文件后再转换。");
       return;
     }
+    const reservation = await authorizeSelectedFile("video", videoFormat);
+    if (!reservation) return;
 
     setConverting(true);
     setProgress(2);
@@ -428,7 +487,7 @@ export default function Home() {
       });
       const { coreURL, wasmURL } = await loadFFmpegCoreAssets(toBlobURL);
       await ffmpeg.load({
-        classWorkerURL: `${window.location.origin}/ffmpeg/worker.js`,
+        classWorkerURL: `${window.location.origin}${basePath}/ffmpeg/worker.js`,
         coreURL,
         wasmURL,
       });
@@ -461,9 +520,11 @@ export default function Home() {
 
       setProgress(100);
       setMessage(`转换完成，${videoFormat.toUpperCase()} 视频已开始下载。`);
+      await auth.finishConversion(reservation.conversionId, "completed");
     } catch (error) {
       console.error(error);
       setMessage("视频转换失败。请尝试较短的视频或更换输出格式。");
+      await auth.finishConversion(reservation.conversionId, "failed", error instanceof Error ? error.message : "视频转换失败");
     } finally {
       setConverting(false);
     }
@@ -496,9 +557,10 @@ export default function Home() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-2 text-xs font-medium text-slate-500 md:flex">
-            <ShieldCheck className="h-4 w-4 text-emerald-500" />
-            本地安全处理
+          <div className="hidden items-center gap-2 md:flex">
+            <Link href="/pricing/" className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-violet-50 hover:text-violet-700">套餐说明</Link>
+            {auth.session ? <Link href="/account/" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">个人中心</Link> : <button onClick={() => openAuthorization("login")} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white"><LogIn className="h-4 w-4" />登录</button>}
+            <button onClick={() => openAuthorization()} className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-semibold text-violet-700"><KeyRound className="h-4 w-4" />立即激活</button>
           </div>
           <button onClick={() => setMenuOpen(!menuOpen)} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 md:hidden" aria-label="打开菜单" aria-expanded={menuOpen}>
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -507,6 +569,8 @@ export default function Home() {
         {menuOpen && (
           <nav className="border-t border-slate-100 bg-white px-5 py-3 md:hidden" aria-label="移动端导航">
             {navItems.map((item) => <a key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</a>)}
+            <Link href="/pricing/" className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700">套餐说明</Link>
+            <button onClick={() => { setMenuOpen(false); openAuthorization(); }} className="block w-full rounded-lg px-3 py-3 text-left text-sm font-semibold text-violet-700">{auth.session ? "立即激活" : "登录 / 激活"}</button>
           </nav>
         )}
       </header>
@@ -520,9 +584,13 @@ export default function Home() {
           文件格式<span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">转换</span>
         </h1>
         <p className="fade-up-delay-2 mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-500 sm:text-lg">
-          快速、安全、免费的在线文件转换工具
-          <span className="hidden sm:inline">，让每一次转换都轻松顺畅</span>
+          简单、安全、高效的在线文件处理工具
+          <span className="hidden sm:inline">，购买激活后即可长期使用</span>
         </p>
+
+        <div className="fade-up-delay-2 mx-auto mt-7 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
+          {["多种格式支持", "文件本地安全处理", "购买后长期使用"].map((benefit) => <span key={benefit} className="flex items-center gap-2 rounded-xl border border-violet-100 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm"><Check className="h-4 w-4 shrink-0 text-emerald-500" />{benefit}</span>)}
+        </div>
 
         <div className="fade-up-delay-2 mx-auto mt-10 max-w-3xl sm:mt-12">
           <div
@@ -530,7 +598,7 @@ export default function Home() {
             onDragOver={(event) => event.preventDefault()}
             onDragLeave={() => setDragging(false)}
             onDrop={(event) => { event.preventDefault(); setDragging(false); selectFile(event.dataTransfer.files[0]); }}
-            onClick={() => inputRef.current?.click()}
+            onClick={requestFileSelection}
             className={`mb-4 cursor-pointer rounded-2xl border bg-white/90 p-4 text-left shadow-sm backdrop-blur transition sm:p-5 ${dragging ? "border-violet-500 bg-violet-50/90 ring-2 ring-violet-100" : "border-violet-200/80 hover:border-violet-400"}`}
           >
             <div className="mb-4 flex items-center justify-between gap-4">
@@ -591,7 +659,7 @@ export default function Home() {
             onDragOver={(e) => e.preventDefault()}
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => { e.preventDefault(); setDragging(false); selectFile(e.dataTransfer.files[0]); }}
-            onClick={() => inputRef.current?.click()}
+            onClick={requestFileSelection}
             className={`upload-zone group relative cursor-pointer overflow-hidden rounded-[28px] border-2 border-dashed bg-white/90 p-7 shadow-glow backdrop-blur-sm transition-all duration-300 sm:p-10 ${dragging ? "scale-[1.01] border-violet-500 bg-violet-50/80" : "border-indigo-200 hover:-translate-y-1 hover:border-violet-400 hover:shadow-[0_28px_80px_-30px_rgba(91,67,255,0.55)]"}`}
           >
             <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,application/pdf,.pdf,audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mov,.mkv,.avi,.webm,.m4v" className="sr-only" onChange={(e) => selectFile(e.target.files?.[0])} />
@@ -609,7 +677,7 @@ export default function Home() {
                   <span className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-violet-600 text-white shadow-lg"><span className="text-base leading-none">+</span></span>
                 </div>
                 <p className="mt-5 text-base font-semibold text-slate-800 sm:text-lg">拖拽文件到这里，或<span className="text-violet-600">点击选择文件</span></p>
-                <p className="mt-2 text-sm text-slate-400">支持图片、PDF、音频与视频文件 · 最大 50MB</p>
+                <p className="mt-2 text-sm text-slate-400">支持图片、PDF、音频与视频文件 · 最大 50MB · 激活后使用</p>
               </div>
             )}
           </div>
@@ -705,7 +773,7 @@ export default function Home() {
             </div>
           )}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-slate-400 sm:text-sm">
-            <span className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-emerald-500" /> 隐私安全</span>
+            <span className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-emerald-500" /> 文件本地处理</span>
             <span className="flex items-center gap-1.5"><Zap className="h-4 w-4 text-amber-500" /> 极速处理</span>
             <span className="flex items-center gap-1.5"><MousePointer2 className="h-4 w-4 text-blue-500" /> 无需安装</span>
           </div>
@@ -775,7 +843,7 @@ export default function Home() {
                           if (tool.videoOutput) setVideoFormat(tool.videoOutput);
                           setProgress(0);
                           setMessage("");
-                          inputRef.current?.click();
+                          requestFileSelection();
                         }}
                         className="tool-card group flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md"
                       >
@@ -798,7 +866,7 @@ export default function Home() {
       <footer className="relative z-10 border-t border-slate-200/70 bg-white/60">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-5 py-7 text-xs text-slate-400 sm:flex-row sm:px-8 lg:px-10">
           <span>© 2026 格式工坊</span>
-          <span>专注于简单、可靠的文件转换体验</span>
+          <span>本站不储存用户上传的文件，请仅处理您拥有合法使用权的文件</span>
         </div>
       </footer>
 
@@ -823,6 +891,7 @@ export default function Home() {
           </div>
         </div>
       )}
+      <AuthModal key={`${authMode}-${authOpen}`} open={authOpen} onClose={() => setAuthOpen(false)} initialMode={authMode} />
     </main>
   );
 }

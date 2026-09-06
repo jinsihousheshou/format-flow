@@ -1,0 +1,13 @@
+project_id = "format-flow"
+
+[functions.redeem-code]
+verify_jwt = true
+
+[functions.authorize-conversion]
+verify_jwt = true
+
+[functions.finish-conversion]
+verify_jwt = true
+
+[functions.admin-api]
+verify_jwt = true

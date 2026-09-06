@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   output: "export",
   distDir: "dist",
   basePath,
+  trailingSlash: true,
 };
 
 export default nextConfig;
