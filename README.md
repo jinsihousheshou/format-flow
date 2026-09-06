@@ -10,6 +10,7 @@
 - 体验码、月卡、年卡、长期版和次数卡
 - 管理员批量生成、复制、导出、禁用兑换码
 - 管理员调整用户权益和封禁异常账号
+- 视频链接下载：后端鉴权、套餐日限额、域名白名单、SSRF 与重定向检查
 - 每次转换前由 Edge Function 验证权限并原子扣减次数
 - PDF 页面转换为 JPG、PNG 或 WEBP，多页自动打包
 - 图片互转：JPG、PNG、WEBP
@@ -42,7 +43,7 @@ npm run dev
 ## 创建 Supabase 后端
 
 1. 在 Supabase 创建项目，打开 SQL Editor。
-2. 完整执行 [`supabase/migrations/202609060001_auth_and_licensing.sql`](supabase/migrations/202609060001_auth_and_licensing.sql)。脚本会创建用户资料、管理员、兑换码、权益、转换记录、RLS 和原子扣次函数。
+2. 依次执行 [`supabase/migrations/202609060001_auth_and_licensing.sql`](supabase/migrations/202609060001_auth_and_licensing.sql) 和 [`supabase/migrations/202609070001_video_link_downloader.sql`](supabase/migrations/202609070001_video_link_downloader.sql)。脚本会创建用户资料、管理员、兑换码、权益、转换记录、视频套餐限额、域名白名单、解析日志、RLS 和原子限流函数。
 3. 在 Authentication 的 URL Configuration 中设置 Site URL 为线上地址，并把本地与线上个人中心加入 Redirect URLs：
    - `http://localhost:3000/account/`
    - `https://jinsihousheshou.github.io/format-flow/account/`
@@ -55,6 +56,7 @@ supabase functions deploy redeem-code
 supabase functions deploy authorize-conversion
 supabase functions deploy finish-conversion
 supabase functions deploy admin-api
+supabase functions deploy video-link
 supabase secrets set ALLOWED_ORIGINS=http://localhost:3000,https://jinsihousheshou.github.io
 ```
 
@@ -74,6 +76,24 @@ select id from auth.users where email = '你的管理员邮箱';
 ## 生成并发送兑换码
 
 登录管理员账号，进入 `/admin/`，选择套餐、有效期、次数和数量后生成。明文兑换码只在生成结果中显示一次；数据库只保存 SHA-256 哈希和遮罩提示。立即复制或导出，并把单个兑换码通过闲鱼聊天发送给对应买家。
+
+管理员后台的“视频链接套餐限额”可分别设置每种套餐每天的解析次数、下载次数和单文件上限。限流由数据库事务和用户级锁执行，前端修改数据不能绕过。
+
+## 视频链接下载
+
+第一阶段真实支持管理员白名单内的 HTTPS 视频直链。数据库初始只放行 MDN 的公共测试媒体域名；增加自有或已审核的媒体域名时，在 SQL Editor 中执行：
+
+```sql
+insert into public.video_source_domains(hostname, label, enabled, allow_subdomains)
+values ('media.example.com', '自有媒体域名', true, false)
+on conflict (hostname) do update set enabled = excluded.enabled;
+```
+
+不要把任意用户可上传或可重定向到任意地址的域名加入白名单。服务端只接受 HTTPS，限制 3 次重定向，每次都会重新检查域名和 DNS，拒绝本机与保留地址；解析和下载分别鉴权、记日志和计入套餐日额度。下载内容通过响应流转发，不创建服务器临时文件。
+
+抖音、快手和哔哩哔哩链接目前只做可靠识别并显示“维护中”。项目没有接入虚构的官方接口，也不会索取用户 Cookie；如果将来取得平台正式开放权限，平台适配入口位于 `supabase/functions/video-link/index.ts`，域名识别位于 `supabase/functions/_shared/video-url.ts`。
+
+解析失败时先查看页面错误码与 `video_link_logs.error_code`：`DOMAIN_NOT_ALLOWED` 表示域名未审核，`PRIVATE_NETWORK_BLOCKED` 表示命中 SSRF 防护，`RATE_LIMITED`/`DAILY_LIMIT_REACHED` 表示限流，`SIZE_LIMIT` 表示源文件大小或套餐上限不符，`UPSTREAM_HTTP_ERROR` 表示源站请求失败。Edge Function 日志不记录完整用户链接。
 
 ## 环境变量
 
@@ -108,6 +128,8 @@ FFmpeg WebAssembly 核心约 32 MB，音频或视频转换首次使用时会从�
 ## 已验证范围与限制
 
 项目代码已验证静态构建、类型检查、桌面与手机布局、GitHub Pages 子路径资源，以及未激活用户的上传拦截。自动化浏览器使用真实文件成功下载了 PNG→JPG、PDF→JPG、WAV→MP3、WEBM→MP4 结果。其余页面列出的输出格式使用同一组 Canvas、PDF.js 或 FFmpeg 实现，但尚未逐一覆盖所有输入编码组合；GIF 动图、BMP、DOCX 等未列为已验证格式。
+
+视频链接功能已使用带分享文案的抖音短链、快手短链、哔哩哔哩视频页链接验证平台识别和“维护中”分支；普通直链使用 MDN 公共 MP4 文件验证响应类型与大小。完整的账号鉴权、数据库计次和 Edge Function 在线调用需要先按上文配置真实 Supabase 项目。
 
 转换在浏览器本地运行可以降低文件泄露和服务器成本，但用户能够读取前端代码，因此不能做到绝对防破解。当前实现把账号状态、兑换码绑定、有效期、次数扣减和管理员操作放在 Supabase 服务端，避免仅靠按钮或 `localStorage` 判断权限。
 

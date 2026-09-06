@@ -6,6 +6,7 @@ export function corsHeaders(request: Request) {
     "Access-Control-Allow-Origin": allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Expose-Headers": "Content-Disposition, Content-Length, Content-Type",
     "Vary": "Origin",
   };
 }

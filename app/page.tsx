@@ -32,6 +32,7 @@ import { useRef, useState } from "react";
 const navItems = [
   { label: "首页", href: "#" },
   { label: "作品展示", href: "#showcase" },
+  { label: "视频下载", href: "/video-download/" },
   { label: "图片转换", href: "#image-tools" },
   { label: "文档转换", href: "#document-tools" },
   { label: "音频转换", href: "#audio-tools" },
@@ -41,7 +42,7 @@ const navItems = [
 type ConverterMode = "image" | "pdf-jpg" | "audio" | "video";
 type ImageFormat = "jpg" | "png" | "webp";
 type AudioFormat = "mp3" | "wav" | "m4a" | "ogg" | "aac" | "flac";
-type VideoFormat = "mp4" | "webm" | "mov" | "mkv" | "avi";
+type VideoFormat = "mp4" | "webm" | "mov" | "mkv" | "avi" | "mp3";
 type ToolCategory = "image" | "document" | "audio" | "video";
 type ToolItem = {
   from: string;
@@ -505,13 +506,14 @@ export default function Home() {
         mov: ["-c:v", "mpeg4", "-q:v", "4", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k"],
         mkv: ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k"],
         avi: ["-c:v", "mpeg4", "-q:v", "4", "-c:a", "libmp3lame", "-b:a", "128k"],
+        mp3: ["-vn", "-c:a", "libmp3lame", "-b:a", "192k"],
       };
       const exitCode = await ffmpeg.exec(["-i", inputName, ...formatArguments[videoFormat], outputName]);
       if (exitCode !== 0) throw new Error(`FFmpeg exited with code ${exitCode}`);
 
       const outputData = await ffmpeg.readFile(outputName);
       const bytes = typeof outputData === "string" ? new TextEncoder().encode(outputData) : new Uint8Array(outputData);
-      const mimeTypes: Record<VideoFormat, string> = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska", avi: "video/x-msvideo" };
+      const mimeTypes: Record<VideoFormat, string> = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska", avi: "video/x-msvideo", mp3: "audio/mpeg" };
       const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
       downloadBlob(new Blob([bytes.buffer], { type: mimeTypes[videoFormat] }), `${baseName}.${videoFormat}`);
       await ffmpeg.deleteFile(inputName);
@@ -519,7 +521,7 @@ export default function Home() {
       ffmpeg.terminate();
 
       setProgress(100);
-      setMessage(`转换完成，${videoFormat.toUpperCase()} 视频已开始下载。`);
+      setMessage(`转换完成，${videoFormat.toUpperCase()} 文件已开始下载。`);
       await auth.finishConversion(reservation.conversionId, "completed");
     } catch (error) {
       console.error(error);
@@ -549,26 +551,24 @@ export default function Home() {
             <span className="text-[19px] font-semibold tracking-tight">格式工坊</span>
           </a>
 
-          <nav className="hidden items-center gap-1 md:flex" aria-label="主导航">
-            {navItems.map((item, index) => (
-              <a key={item.label} href={item.href} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${index === 0 ? "bg-violet-50 text-violet-700" : "text-slate-600 hover:bg-slate-50 hover:text-violet-700"}`}>
-                {item.label}
-              </a>
+          <nav className="hidden items-center gap-1 xl:flex" aria-label="主导航">
+            {navItems.map((item, index) => item.href.startsWith("/") ? <Link key={item.label} href={item.href} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-violet-700">{item.label}</Link> : (
+              <a key={item.label} href={item.href} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${index === 0 ? "bg-violet-50 text-violet-700" : "text-slate-600 hover:bg-slate-50 hover:text-violet-700"}`}>{item.label}</a>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="hidden items-center gap-2 xl:flex">
             <Link href="/pricing/" className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-violet-50 hover:text-violet-700">套餐说明</Link>
             {auth.session ? <Link href="/account/" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">个人中心</Link> : <button onClick={() => openAuthorization("login")} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white"><LogIn className="h-4 w-4" />登录</button>}
             <button onClick={() => openAuthorization()} className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-semibold text-violet-700"><KeyRound className="h-4 w-4" />立即激活</button>
           </div>
-          <button onClick={() => setMenuOpen(!menuOpen)} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 md:hidden" aria-label="打开菜单" aria-expanded={menuOpen}>
+          <button onClick={() => setMenuOpen(!menuOpen)} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 xl:hidden" aria-label="打开菜单" aria-expanded={menuOpen}>
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
         {menuOpen && (
-          <nav className="border-t border-slate-100 bg-white px-5 py-3 md:hidden" aria-label="移动端导航">
-            {navItems.map((item) => <a key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</a>)}
+          <nav className="border-t border-slate-100 bg-white px-5 py-3 xl:hidden" aria-label="移动端导航">
+            {navItems.map((item) => item.href.startsWith("/") ? <Link key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</Link> : <a key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</a>)}
             <Link href="/pricing/" className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700">套餐说明</Link>
             <button onClick={() => { setMenuOpen(false); openAuthorization(); }} className="block w-full rounded-lg px-3 py-3 text-left text-sm font-semibold text-violet-700">{auth.session ? "立即激活" : "登录 / 激活"}</button>
           </nav>
@@ -647,7 +647,7 @@ export default function Home() {
                     <option value="mp3">MP3</option><option value="wav">WAV</option><option value="m4a">M4A</option><option value="ogg">OGG</option><option value="aac">AAC</option><option value="flac">FLAC</option>
                   </>}
                   {selectedFile && converterMode === "video" && <>
-                    <option value="mp4">MP4</option><option value="webm">WEBM</option><option value="mov">MOV</option><option value="mkv">MKV</option><option value="avi">AVI</option>
+                    <option value="mp4">MP4</option><option value="mp3">MP3（提取音频）</option><option value="webm">WEBM</option><option value="mov">MOV</option><option value="mkv">MKV</option><option value="avi">AVI</option>
                   </>}
                 </select>
               </div>

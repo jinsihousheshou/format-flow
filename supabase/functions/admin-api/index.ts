@@ -23,16 +23,18 @@ Deno.serve(async (request) => {
 
     if (body.action === "dashboard") {
       const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-      const [{ data: authData, error: authError }, { count: activatedUsers }, { count: todayConversions }, { count: totalCodes }, { data: codes, error: codesError }, { data: entitlements }] = await Promise.all([
+      const [{ data: authData, error: authError }, { count: activatedUsers }, { count: todayConversions }, { count: totalCodes }, { data: codes, error: codesError }, { data: entitlements }, { data: planLimits, error: limitsError }] = await Promise.all([
         service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
         service.from("entitlements").select("user_id", { count: "exact", head: true }).eq("status", "active"),
         service.from("conversion_logs").select("id", { count: "exact", head: true }).gte("created_at", today.toISOString()),
         service.from("redemption_codes").select("id", { count: "exact", head: true }),
         service.from("redemption_codes").select("id,code_prefix,plan_type,conversion_limit,expires_at,activated_by,activated_at,disabled_at,note").order("generated_at", { ascending: false }).limit(100),
         service.from("entitlements").select("user_id,plan_type,expires_at,remaining_conversions,status"),
+        service.from("plan_video_limits").select("plan_type,daily_parse_limit,daily_download_limit,max_video_bytes").order("plan_type"),
       ]);
       if (authError) throw authError;
       if (codesError) throw codesError;
+      if (limitsError) throw limitsError;
       const users = authData.users;
       const emails = new Map(users.map((user) => [user.id, user.email || ""]));
       const entitlementMap = new Map((entitlements || []).map((item) => [item.user_id, item]));
@@ -40,6 +42,7 @@ Deno.serve(async (request) => {
         stats: { registeredUsers: users.length, activatedUsers: activatedUsers || 0, todayConversions: todayConversions || 0, totalCodes: totalCodes || 0 },
         codes: (codes || []).map((code) => ({ ...code, activated_by_email: code.activated_by ? emails.get(code.activated_by) || "未知用户" : null })),
         users: users.map((user) => ({ id: user.id, email: user.email, created_at: user.created_at, banned_until: user.banned_until, ...(entitlementMap.get(user.id) || {}) })),
+        planLimits: planLimits || [],
       });
     }
 
@@ -78,6 +81,20 @@ Deno.serve(async (request) => {
       ]);
       if (authError) throw authError;
       if (profileError) throw profileError;
+      return json(request, { ok: true });
+    }
+
+    if (body.action === "update-video-limits") {
+      if (!planTypes.has(body.planType)) throw new Error("套餐类型无效。");
+      const dailyParseLimit = Number(body.dailyParseLimit);
+      const dailyDownloadLimit = Number(body.dailyDownloadLimit);
+      const maxVideoMb = Number(body.maxVideoMb);
+      if (![dailyParseLimit, dailyDownloadLimit, maxVideoMb].every(Number.isInteger) || dailyParseLimit < 0 || dailyParseLimit > 1000 || dailyDownloadLimit < 0 || dailyDownloadLimit > 1000 || maxVideoMb < 1 || maxVideoMb > 100) throw new Error("视频限额超出允许范围。");
+      const { error } = await service.from("plan_video_limits").update({
+        daily_parse_limit: dailyParseLimit, daily_download_limit: dailyDownloadLimit,
+        max_video_bytes: maxVideoMb * 1024 * 1024, updated_at: new Date().toISOString(),
+      }).eq("plan_type", body.planType);
+      if (error) throw error;
       return json(request, { ok: true });
     }
 
