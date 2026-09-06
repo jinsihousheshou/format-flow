@@ -10,3 +10,4 @@ tmp/
 *.tsbuildinfo
 .vinext/
 .wrangler/
+supabase/.temp/
