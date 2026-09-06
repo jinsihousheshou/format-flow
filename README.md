@@ -91,7 +91,7 @@ on conflict (hostname) do update set enabled = excluded.enabled;
 
 不要把任意用户可上传或可重定向到任意地址的域名加入白名单。服务端只接受 HTTPS，限制 3 次重定向，每次都会重新检查域名和 DNS，拒绝本机与保留地址；解析和下载分别鉴权、记日志和计入套餐日额度。下载内容通过响应流转发，不创建服务器临时文件。
 
-抖音、快手和哔哩哔哩链接目前只做可靠识别并显示“维护中”。项目没有接入虚构的官方接口，也不会索取用户 Cookie；如果将来取得平台正式开放权限，平台适配入口位于 `supabase/functions/video-link/index.ts`，域名识别位于 `supabase/functions/_shared/video-url.ts`。
+抖音公开视频链接会解析短链并通过抖音官方公开接口展示官方播放器、标题和画面尺寸；该接口不返回 MP4 下载地址，因此页面不会伪装成可下载。快手和哔哩哔哩目前只做可靠识别并显示“维护中”。项目不会索取用户 Cookie；平台适配入口位于 `supabase/functions/video-link/index.ts`，域名识别位于 `supabase/functions/_shared/video-url.ts`。
 
 解析失败时先查看页面错误码与 `video_link_logs.error_code`：`DOMAIN_NOT_ALLOWED` 表示域名未审核，`PRIVATE_NETWORK_BLOCKED` 表示命中 SSRF 防护，`RATE_LIMITED`/`DAILY_LIMIT_REACHED` 表示限流，`SIZE_LIMIT` 表示源文件大小或套餐上限不符，`UPSTREAM_HTTP_ERROR` 表示源站请求失败。Edge Function 日志不记录完整用户链接。
 
