@@ -280,7 +280,7 @@ export default function Home() {
 
     try {
       const [pdfjs, JSZipModule] = await Promise.all([import("pdfjs-dist"), import("jszip")]);
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      pdfjs.GlobalWorkerOptions.workerSrc = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/pdf.worker.min.mjs`;
       const data = new Uint8Array(await selectedFile.arrayBuffer());
       const loadingTask = pdfjs.getDocument({ data });
       const pdf = await loadingTask.promise;
