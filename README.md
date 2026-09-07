@@ -81,7 +81,7 @@ select id from auth.users where email = '你的管理员邮箱';
 
 ## 视频链接下载
 
-真正的 yt-dlp 下载由 [`backend/`](backend/) 中的独立 FastAPI 服务提供。它实现 `/api/parse`、`/api/download`、`/api/jobs/{id}`、`/api/jobs/{id}/file` 和 `/api/health`，使用 Docker 镜像内的 FFmpeg 合并音视频，并在文件响应结束或任务过期后清理临时目录。具体部署和本地联调命令见 [`backend/README.md`](backend/README.md)。
+真正的 yt-dlp 下载由 [`backend/`](backend/) 中的独立 FastAPI 服务提供。它实现 `/api/parse`、`/api/download`、`/api/jobs/{id}`、`/api/jobs/{id}/file`、`/health` 和 `/api/health`，使用 Docker 镜像内的 FFmpeg 合并音视频，并在文件响应结束或任务过期后清理临时目录。仓库根目录的 [`render.yaml`](render.yaml) 可创建 Render Blueprint；具体部署和本地联调命令见 [`backend/README.md`](backend/README.md)。
 
 第一阶段真实支持管理员白名单内的 HTTPS 视频直链。数据库初始只放行 MDN 的公共测试媒体域名；增加自有或已审核的媒体域名时，在 SQL Editor 中执行：
 
@@ -132,7 +132,7 @@ FFmpeg WebAssembly 核心约 32 MB，音频或视频转换首次使用时会从�
 
 项目代码已验证静态构建、类型检查、桌面与手机布局、GitHub Pages 子路径资源，以及未激活用户的上传拦截。自动化浏览器使用真实文件成功下载了 PNG→JPG、PDF→JPG、WAV→MP3、WEBM→MP4 结果。其余页面列出的输出格式使用同一组 Canvas、PDF.js 或 FFmpeg 实现，但尚未逐一覆盖所有输入编码组合；GIF 动图、BMP、DOCX 等未列为已验证格式。
 
-视频后端的单元测试、Python 编译、FastAPI 启动、健康检查、精确 CORS 和未登录 401 拦截已通过。yt-dlp 2026.08.30 nightly 已实测：哔哩哔哩公开单视频可返回真实标题和 360P–1080P 清晰度；指定抖音短链返回 fresh cookies 要求，因此没有标记为可下载。开放 MP4 直链已解析，当前本机网络代理在文件传输阶段发生 TLS 断连；需要在部署后的服务器网络再次执行完整下载验收。
+视频后端的单元测试、Python 编译、FastAPI 启动、健康检查、精确 CORS 和未登录 401 拦截已通过。项目自有测试 MP4 已完整跑通分享文案提取、后端解析、创建任务、下载文件和临时文件清理。yt-dlp 2026.08.30 nightly 已实测：哔哩哔哩公开单视频可返回真实标题和 360P–1080P 清晰度；指定抖音短链返回 fresh cookies 要求，因此没有标记为可下载。快手仍受页面变化和反爬限制，解析失败时会返回真实错误，不会伪造结果。
 
 转换在浏览器本地运行可以降低文件泄露和服务器成本，但用户能够读取前端代码，因此不能做到绝对防破解。当前实现把账号状态、兑换码绑定、有效期、次数扣减和管理员操作放在 Supabase 服务端，避免仅靠按钮或 `localStorage` 判断权限。
 

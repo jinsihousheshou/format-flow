@@ -29,7 +29,18 @@ docker build -t format-flow-video ./backend
 docker run --rm -p 8000:8000 --env-file ./backend/.env format-flow-video
 ```
 
-可以把 `backend/Dockerfile` 部署到支持 Docker、HTTPS 和至少 1 GB 临时磁盘的 Render、Railway、Fly.io 或自有服务器。配置 `.env.example` 中的变量，健康检查填写 `/api/health`。部署后把公开 HTTPS 地址写入 GitHub Actions 仓库变量 `VIDEO_API_URL`，Pages 构建会注入 `NEXT_PUBLIC_VIDEO_API_URL`。
+可以把 `backend/Dockerfile` 部署到支持 Docker、HTTPS 和至少 1 GB 临时磁盘的 Render、Railway、Fly.io 或自有服务器。配置 `.env.example` 中的变量，健康检查填写 `/health`（兼容地址 `/api/health` 仍然保留）。部署后把公开 HTTPS 地址写入 GitHub Actions 仓库变量 `VIDEO_API_URL`，Pages 构建会注入 `NEXT_PUBLIC_VIDEO_API_URL`。
+
+### Render
+
+仓库根目录的 `render.yaml` 可以直接创建 Blueprint。唯一需要在 Render 控制台填写的敏感变量是 `SUPABASE_ANON_KEY`；不要填写 service role key。若手动创建 Docker Web Service，各项应填写：
+
+- Root Directory：`backend`
+- Dockerfile Path：`./Dockerfile`
+- Docker Build Context：`.`
+- Health Check Path：`/health`
+
+Dockerfile 使用 `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`。Render 会提供 `PORT`，本地没有设置时才使用 8000。公开地址必须为 Render 提供的 HTTPS `onrender.com` 地址，保存到 GitHub Actions Variables 的 `VIDEO_API_URL` 时不要在结尾添加 `/`。
 
 服务实例重启后内存任务会丢失；当前最小版本适合单实例。扩容前应把任务状态迁移到 Redis/数据库，把文件迁移到对象存储。
 

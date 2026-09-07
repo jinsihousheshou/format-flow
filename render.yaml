@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: format-flow-video
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: SUPABASE_URL
+        value: https://rjgtbjfaradhhbprfsux.supabase.co
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://jinsihousheshou.github.io,http://localhost:3000,http://127.0.0.1:3000
+      - key: DIRECT_VIDEO_HOSTS
+        value: jinsihousheshou.github.io,developer.mozilla.org,media.w3.org
+      - key: TEMP_DIR
+        value: /tmp/format-flow
+      - key: MAX_CONCURRENT_PARSES
+        value: "2"
+      - key: MAX_CONCURRENT_DOWNLOADS
+        value: "2"
+      - key: PARSE_TIMEOUT_SECONDS
+        value: "45"
+      - key: DOWNLOAD_TIMEOUT_SECONDS
+        value: "600"
+      - key: JOB_TTL_SECONDS
+        value: "1800"

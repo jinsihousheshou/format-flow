@@ -65,6 +65,7 @@ def require_rights(value: bool) -> None:
         raise HTTPException(400, "请先确认您拥有该视频的下载和使用权限。")
 
 
+@app.get("/health")
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "format-flow-video", "yt_dlp": __import__("yt_dlp").version.__version__}
