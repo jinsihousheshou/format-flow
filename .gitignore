@@ -11,3 +11,8 @@ tmp/
 .vinext/
 .wrangler/
 supabase/.temp/
+.venv/
+backend/.env
+__pycache__/
+.pytest_cache/
+backend/tmp*/
