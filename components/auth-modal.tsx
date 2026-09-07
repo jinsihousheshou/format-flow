@@ -49,9 +49,9 @@ export default function AuthModal({ open, onClose, initialMode = "login" }: { op
         </div>
         {!auth.configured && <p className="mt-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">站点管理员尚未完成 Supabase 环境变量配置，账号功能暂不可用。</p>}
         {mode === "login" && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">使用注册时填写的邮箱和密码登录。</p>}
-        {mode === "signup" && <p className="mt-4 rounded-xl bg-violet-50 p-3 text-sm leading-6 text-violet-700">创建新账号后，请打开验证邮件完成确认，再登录并输入兑换码激活。</p>}
+        {mode === "signup" && <p className="mt-4 rounded-xl bg-violet-50 p-3 text-sm leading-6 text-violet-700">创建新账号后，请打开验证邮件完成确认，再登录并输入激活码。</p>}
         {mode === "redeem" ? (
-          <label className="mt-6 block"><span className="mb-2 block text-sm font-medium text-slate-700">兑换码</span><span className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 px-4 focus-within:border-violet-400"><KeyRound className="h-4 w-4 text-slate-400" /><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX-XXXX" className="w-full bg-transparent text-sm uppercase outline-none" /></span></label>
+          <label className="mt-6 block"><span className="mb-2 block text-sm font-medium text-slate-700">激活码</span><span className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 px-4 focus-within:border-violet-400"><KeyRound className="h-4 w-4 text-slate-400" /><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX-XXXX" className="w-full bg-transparent text-sm uppercase outline-none" /></span></label>
         ) : (
           <div className="mt-6 space-y-4">
             <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">邮箱</span><span className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 px-4 focus-within:border-violet-400"><Mail className="h-4 w-4 text-slate-400" /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className="w-full bg-transparent text-sm outline-none" /></span></label>
@@ -65,7 +65,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }: { op
           {!auth.session && mode !== "login" && <button onClick={() => switchMode("login")}>返回登录</button>}
           {!auth.session && mode !== "signup" && <button onClick={() => switchMode("signup")}>注册账号</button>}
           {!auth.session && mode !== "reset" && <button onClick={() => switchMode("reset")}>忘记密码</button>}
-          {auth.session && mode !== "redeem" && <button onClick={() => switchMode("redeem")}>输入兑换码</button>}
+          {auth.session && mode !== "redeem" && <button onClick={() => switchMode("redeem")}>输入激活码</button>}
         </div>
       </div>
     </div>

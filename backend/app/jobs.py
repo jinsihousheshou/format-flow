@@ -19,6 +19,9 @@ class ParsedVideo:
     thumbnail: str | None
     duration: float | None
     formats: dict[str, dict[str, Any]]
+    kind: str = "video"
+    author: str | None = None
+    official_url: str | None = None
     created_at: float = field(default_factory=time.time)
 
 

@@ -1,7 +1,6 @@
 import { requireAdmin } from "../_shared/clients.ts";
 import { corsHeaders, errorResponse, json } from "../_shared/http.ts";
 
-const planTypes = new Set(["trial", "monthly", "yearly", "lifetime", "credits"]);
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function randomCode() {
@@ -30,7 +29,7 @@ Deno.serve(async (request) => {
         service.from("redemption_codes").select("id", { count: "exact", head: true }),
         service.from("redemption_codes").select("id,code_prefix,plan_type,conversion_limit,expires_at,activated_by,activated_at,disabled_at,note").order("generated_at", { ascending: false }).limit(100),
         service.from("entitlements").select("user_id,plan_type,expires_at,remaining_conversions,status"),
-        service.from("plan_video_limits").select("plan_type,daily_parse_limit,daily_download_limit,max_video_bytes").order("plan_type"),
+        service.from("plan_video_limits").select("plan_type,daily_parse_limit,daily_download_limit,max_video_bytes").eq("plan_type", "lifetime"),
       ]);
       if (authError) throw authError;
       if (codesError) throw codesError;
@@ -47,14 +46,11 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === "generate-codes") {
-      const count = Math.max(1, Math.min(100, Number(body.count) || 1));
-      if (!planTypes.has(body.planType)) throw new Error("套餐类型无效。");
-      const codes = Array.from({ length: count }, randomCode);
-      const expiresAt = new Date(Date.now() + Math.max(1, Number(body.codeExpiresDays) || 30) * 86400000).toISOString();
+      const codes = [randomCode()];
       const rows = await Promise.all(codes.map(async (code) => ({
         code_hash: await hashCode(code), code_prefix: `${code.slice(0, 4)}-••••-••••-${code.slice(-4)}`,
-        plan_type: body.planType, validity_days: body.validityDays || null,
-        conversion_limit: body.conversionLimit || null, expires_at: expiresAt, note: String(body.note || "").slice(0, 200) || null,
+        plan_type: "lifetime", validity_days: null,
+        conversion_limit: null, expires_at: null, note: String(body.note || "").slice(0, 200) || null,
       })));
       const { error } = await service.from("redemption_codes").insert(rows);
       if (error) throw error;
@@ -68,8 +64,7 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === "update-user") {
-      const expiresAt = Number(body.expiresInDays) === 0 ? null : new Date(Date.now() + Math.max(1, Number(body.expiresInDays)) * 86400000).toISOString();
-      const { error } = await service.from("entitlements").upsert({ user_id: body.userId, plan_type: expiresAt ? "monthly" : "lifetime", activated_at: new Date().toISOString(), expires_at: expiresAt, remaining_conversions: body.remainingConversions, status: "active", updated_at: new Date().toISOString() });
+      const { error } = await service.from("entitlements").upsert({ user_id: body.userId, plan_type: "lifetime", activated_at: new Date().toISOString(), expires_at: null, remaining_conversions: null, status: "active", updated_at: new Date().toISOString() });
       if (error) throw error;
       return json(request, { ok: true });
     }
@@ -85,7 +80,7 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === "update-video-limits") {
-      if (!planTypes.has(body.planType)) throw new Error("套餐类型无效。");
+      if (body.planType !== "lifetime") throw new Error("只允许配置长期权限额度。");
       const dailyParseLimit = Number(body.dailyParseLimit);
       const dailyDownloadLimit = Number(body.dailyDownloadLimit);
       const maxVideoMb = Number(body.maxVideoMb);

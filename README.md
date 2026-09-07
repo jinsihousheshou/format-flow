@@ -1,22 +1,23 @@
 # 格式工坊（Format Flow）
 
-一个带账号、兑换码授权和管理员后台的浏览器端文件格式转换网站。用户文件留在浏览器本地处理；登录、兑换、次数扣减和管理操作由 Supabase 服务端验证。
+一个带账号、一次性激活码和管理员后台的文件格式转换与媒体下载网站。登录、激活、权限检查和管理操作由 Supabase 服务端验证。
 
 在线访问：<https://jinsihousheshou.github.io/format-flow/>
 
 ## 当前功能
 
 - 用户注册、登录、找回密码、修改密码和退出登录
-- 体验码、月卡、年卡、长期版和次数卡
-- 管理员批量生成、复制、导出、禁用兑换码
+- 一个账号绑定一个一次性激活码，激活后长期使用
+- 管理员生成、复制、导出、禁用一次性激活码
 - 管理员调整用户权益和封禁异常账号
-- 视频链接下载：后端鉴权、套餐日限额、域名白名单、SSRF 与重定向检查
+- 视频与音频链接下载：后端鉴权、账号日限额、域名白名单、SSRF 与请求限制
 - 每次转换前由 Edge Function 验证权限并原子扣减次数
 - PDF 页面转换为 JPG、PNG 或 WEBP，多页自动打包
 - 图片互转：JPG、PNG、WEBP
 - 音频输出：MP3、WAV、M4A、OGG、AAC、FLAC
 - 视频输出：MP4、WebM、MOV、MKV、AVI
 - 图片、文档、音频、视频分类导航
+- 独立音频下载页：公开媒体直链解析、授权视频提取音频、六种音频格式输出
 - 响应式中文界面，支持拖放或选择文件
 
 当前没有实现图片转 PDF、PDF 合并、DOCX 转 PDF；页面不会把这些尚未验证的能力展示成可用工具。
@@ -43,7 +44,7 @@ npm run dev
 ## 创建 Supabase 后端
 
 1. 在 Supabase 创建项目，打开 SQL Editor。
-2. 依次执行 [`supabase/migrations/202609060001_auth_and_licensing.sql`](supabase/migrations/202609060001_auth_and_licensing.sql) 和 [`supabase/migrations/202609070001_video_link_downloader.sql`](supabase/migrations/202609070001_video_link_downloader.sql)。脚本会创建用户资料、管理员、兑换码、权益、转换记录、视频套餐限额、域名白名单、解析日志、RLS 和原子限流函数。
+2. 按文件名时间顺序执行 [`supabase/migrations/`](supabase/migrations/) 中的全部 SQL。脚本会创建用户资料、管理员、激活码、权益、转换记录、媒体限额、域名白名单、解析日志、RLS 和原子限流函数，并停用未兑换的旧套餐码。
 3. 在 Authentication 的 URL Configuration 中设置 Site URL 为线上地址，并把本地与线上个人中心加入 Redirect URLs：
    - `http://localhost:3000/account/`
    - `https://jinsihousheshou.github.io/format-flow/account/`
@@ -73,15 +74,15 @@ select id from auth.users where email = '你的管理员邮箱';
 
 管理员使用普通登录入口登录后，导航会显示“管理后台”。管理员身份由 Edge Function 再次查询 `admin_users`，普通用户修改网址无法执行管理操作。不要把管理员密码写入 SQL、环境变量或前端。
 
-## 生成并发送兑换码
+## 生成并发送激活码
 
-登录管理员账号，进入 `/admin/`，选择套餐、有效期、次数和数量后生成。明文兑换码只在生成结果中显示一次；数据库只保存 SHA-256 哈希和遮罩提示。立即复制或导出，并把单个兑换码通过闲鱼聊天发送给对应买家。
+登录管理员账号，进入 `/admin/`，点击生成一个长期激活码。明文激活码只显示一次；数据库只保存 SHA-256 哈希和遮罩提示。立即复制，并通过闲鱼聊天发送给对应买家。每个账号只需激活一次，每个激活码只能绑定一个账号。
 
-管理员后台的“视频链接套餐限额”可分别设置每种套餐每天的解析次数、下载次数和单文件上限。限流由数据库事务和用户级锁执行，前端修改数据不能绕过。
+管理员后台的“媒体链接使用限额”可设置已激活账号每天的解析次数、下载次数和单文件上限。限流由数据库事务和用户级锁执行，前端修改数据不能绕过。
 
 ## 视频链接下载
 
-真正的 yt-dlp 下载由 [`backend/`](backend/) 中的独立 FastAPI 服务提供。它实现 `/api/parse`、`/api/download`、`/api/jobs/{id}`、`/api/jobs/{id}/file`、`/health` 和 `/api/health`，使用 Docker 镜像内的 FFmpeg 合并音视频，并在文件响应结束或任务过期后清理临时目录。仓库根目录的 [`render.yaml`](render.yaml) 可创建 Render Blueprint；具体部署和本地联调命令见 [`backend/README.md`](backend/README.md)。
+真正的 yt-dlp 媒体处理由 [`backend/`](backend/) 中的独立 FastAPI 服务提供。除视频接口外，它还实现 `/api/audio/parse` 和 `/api/audio/download`，使用 Docker 镜像内的 FFmpeg 提取或转换授权音频，并在文件响应结束或任务过期后清理临时目录。网易云音乐、QQ音乐和酷狗音乐受限内容只返回官方播放入口。仓库根目录的 [`render.yaml`](render.yaml) 可创建 Render Blueprint；具体部署和本地联调命令见 [`backend/README.md`](backend/README.md)。
 
 第一阶段真实支持管理员白名单内的 HTTPS 视频直链。数据库初始只放行 MDN 的公共测试媒体域名；增加自有或已审核的媒体域名时，在 SQL Editor 中执行：
 
@@ -91,7 +92,7 @@ values ('media.example.com', '自有媒体域名', true, false)
 on conflict (hostname) do update set enabled = excluded.enabled;
 ```
 
-不要把任意用户可上传或可重定向到任意地址的域名加入白名单。服务端只接受 HTTPS，限制 3 次重定向，每次都会重新检查域名和 DNS，拒绝本机与保留地址；解析和下载分别鉴权、记日志和计入套餐日额度。下载内容通过响应流转发，不创建服务器临时文件。
+不要把任意用户可上传或可重定向到任意地址的域名加入白名单。服务端只接受 HTTP/HTTPS，拒绝本机、内网与保留地址；解析和下载分别鉴权、记日志并计入账号日额度。yt-dlp 与 ffmpeg 产生的临时文件在下载响应完成或任务过期后自动删除。
 
 独立后端使用 yt-dlp 解析哔哩哔哩单个公开视频和白名单普通直链。抖音实测要求 fresh cookies，因此在“不接收 Cookie、不绕过登录”的约束下保留官方播放器预览；快手由 yt-dlp 尝试解析，失败时返回明确错误，页面不会假装成功。
 

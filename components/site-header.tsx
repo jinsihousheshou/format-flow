@@ -10,7 +10,7 @@ export default function SiteHeader() {
   const { session, account } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const links = [{ label: "首页", href: "/" }, { label: "视频下载", href: "/video-download/" }, { label: "套餐说明", href: "/pricing/" }, ...(session ? [{ label: "个人中心", href: "/account/" }] : []), ...(account.isAdmin ? [{ label: "管理后台", href: "/admin/" }] : [])];
+  const links = [{ label: "首页", href: "/" }, { label: "视频下载", href: "/video-download/" }, { label: "音频下载", href: "/audio-download/" }, { label: "购买说明", href: "/pricing/" }, ...(session ? [{ label: "个人中心", href: "/account/" }] : []), ...(account.isAdmin ? [{ label: "管理后台", href: "/admin/" }] : [])];
   return <>
     <header className="relative z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-10">

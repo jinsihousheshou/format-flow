@@ -1,6 +1,8 @@
-# 视频下载后端
+# 视频与音频处理后端
 
-这是“格式工坊”的独立 FastAPI 服务。它使用用户的 Supabase JWT 验证登录，并通过现有的 `reserve_video_link_action` RPC 检查套餐、每日次数、封禁状态和并发请求。密钥只需要公开的 Supabase anon key，不使用 service_role。
+这是“格式工坊”的独立 FastAPI 服务。它使用用户的 Supabase JWT 验证登录，并通过现有的 `reserve_video_link_action` RPC 检查账号激活状态、每日次数、封禁状态和并发请求。密钥只需要公开的 Supabase anon key，不使用 service_role。
+
+视频接口为 `/api/parse` 和 `/api/download`；音频接口为 `/api/audio/parse` 和 `/api/audio/download`。两类任务共用 `/api/jobs/{id}` 与 `/api/jobs/{id}/file`。音频直链和获授权的视频直链可以输出 MP3、M4A、WAV、AAC、FLAC、OGG。网易云音乐、QQ音乐和酷狗音乐分享页只返回官方播放入口，不生成受版权或平台限制的下载地址。
 
 ## 本地运行
 
@@ -41,6 +43,8 @@ docker run --rm -p 8000:8000 --env-file ./backend/.env format-flow-video
 - Health Check Path：`/health`
 
 Dockerfile 使用 `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}`。Render 会提供 `PORT`，本地没有设置时才使用 8000。公开地址必须为 Render 提供的 HTTPS `onrender.com` 地址，保存到 GitHub Actions Variables 的 `VIDEO_API_URL` 时不要在结尾添加 `/`。
+
+`DIRECT_MEDIA_HOSTS` 是允许处理的普通媒体直链域名白名单。只加入您确认提供公开、合法媒体文件的域名；请求仍会拒绝本机、内网和保留 IP。音乐平台域名由独立适配器识别，一个平台失效不会影响其他平台。
 
 服务实例重启后内存任务会丢失；当前最小版本适合单实例。扩容前应把任务状态迁移到 Redis/数据库，把文件迁移到对象存储。
 

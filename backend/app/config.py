@@ -16,6 +16,10 @@ class Settings:
         "https://jinsihousheshou.github.io,http://localhost:3000,http://127.0.0.1:3000",
     )
     direct_video_hosts: tuple[str, ...] = _csv("DIRECT_VIDEO_HOSTS", "jinsihousheshou.github.io,developer.mozilla.org,media.w3.org")
+    direct_media_hosts: tuple[str, ...] = _csv(
+        "DIRECT_MEDIA_HOSTS",
+        os.getenv("DIRECT_VIDEO_HOSTS", "jinsihousheshou.github.io,developer.mozilla.org,media.w3.org"),
+    )
     temp_dir: Path = Path(os.getenv("TEMP_DIR", "/tmp/format-flow"))
     max_concurrent_parses: int = int(os.getenv("MAX_CONCURRENT_PARSES", "2"))
     max_concurrent_downloads: int = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))

@@ -67,7 +67,7 @@ async def _rpc(user: User, function: str, payload: dict[str, Any]) -> Any:
     if response.status_code >= 400:
         message = data.get("message") if isinstance(data, dict) else None
         status = 429 if message and ("频繁" in message or "次数" in message or "进行中" in message) else 403
-        raise HTTPException(status, message or "没有视频处理权限。")
+        raise HTTPException(status, message or "没有媒体处理权限。")
     return data
 
 

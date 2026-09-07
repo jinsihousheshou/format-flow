@@ -33,6 +33,7 @@ const navItems = [
   { label: "首页", href: "#" },
   { label: "作品展示", href: "#showcase" },
   { label: "视频下载", href: "/video-download/" },
+  { label: "音频下载", href: "/audio-download/" },
   { label: "图片转换", href: "#image-tools" },
   { label: "文档转换", href: "#document-tools" },
   { label: "音频转换", href: "#audio-tools" },
@@ -558,7 +559,7 @@ export default function Home() {
           </nav>
 
           <div className="hidden items-center gap-2 xl:flex">
-            <Link href="/pricing/" className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-violet-50 hover:text-violet-700">套餐说明</Link>
+            <Link href="/pricing/" className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-violet-50 hover:text-violet-700">购买说明</Link>
             {auth.session ? <Link href="/account/" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">个人中心</Link> : <button onClick={() => openAuthorization("login")} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white"><LogIn className="h-4 w-4" />登录</button>}
             <button onClick={() => openAuthorization()} className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-semibold text-violet-700"><KeyRound className="h-4 w-4" />立即激活</button>
           </div>
@@ -569,7 +570,7 @@ export default function Home() {
         {menuOpen && (
           <nav className="border-t border-slate-100 bg-white px-5 py-3 xl:hidden" aria-label="移动端导航">
             {navItems.map((item) => item.href.startsWith("/") ? <Link key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</Link> : <a key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-violet-50 hover:text-violet-700">{item.label}</a>)}
-            <Link href="/pricing/" className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700">套餐说明</Link>
+            <Link href="/pricing/" className="block rounded-lg px-3 py-3 text-sm font-medium text-slate-700">购买说明</Link>
             <button onClick={() => { setMenuOpen(false); openAuthorization(); }} className="block w-full rounded-lg px-3 py-3 text-left text-sm font-semibold text-violet-700">{auth.session ? "立即激活" : "登录 / 激活"}</button>
           </nav>
         )}
@@ -815,6 +816,10 @@ export default function Home() {
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">按文件类型选择转换</h2>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">每一种文件都有独立区域，工具不再混排。</p>
         </div>
+        <Link href="/audio-download/" className="group mb-6 flex flex-col gap-5 rounded-[26px] border border-violet-200 bg-gradient-to-br from-violet-600 to-blue-600 p-6 text-white shadow-[0_18px_45px_rgba(79,70,229,0.22)] transition hover:-translate-y-0.5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+          <span className="flex items-center gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15"><FileAudio className="h-6 w-6" /></span><span><span className="block text-lg font-bold">音频下载</span><span className="mt-1 block text-sm text-white/75">解析授权音频直链、从授权视频提取音频，并输出 MP3、M4A、WAV、AAC、FLAC 或 OGG</span></span></span>
+          <span className="inline-flex items-center gap-2 self-start rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-violet-700 sm:self-auto">打开工具 <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></span>
+        </Link>
         <div className="space-y-6">
           {toolGroups.map((group) => {
             const GroupIcon = group.icon;

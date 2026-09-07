@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from .config import settings
+from .audio import download_audio, parse_audio
 from .downloader import download_video, parse_video
 from .jobs import DownloadJob, store
-from .security import validate_source
+from .security import validate_audio_source, validate_source
 from .supabase import User, current_user, finish_action, reserve_action
 
 
@@ -60,9 +61,20 @@ class DownloadRequest(BaseModel):
     rights_confirmed: bool = False
 
 
+class AudioDownloadRequest(BaseModel):
+    parse_id: str = Field(min_length=20, max_length=50)
+    format_id: str = Field(pattern="^(mp3|m4a|wav|aac|flac|ogg)$")
+    rights_confirmed: bool = False
+
+
 def require_rights(value: bool) -> None:
     if value is not True:
         raise HTTPException(400, "请先确认您拥有该视频的下载和使用权限。")
+
+
+def require_audio_rights(value: bool) -> None:
+    if value is not True:
+        raise HTTPException(400, "请先确认您拥有该音频的下载、转换和使用权限。")
 
 
 @app.get("/health")
@@ -120,6 +132,47 @@ async def parse_endpoint(payload: ParseRequest, user: User = Depends(current_use
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.post("/api/audio/parse")
+async def parse_audio_endpoint(payload: ParseRequest, user: User = Depends(current_user)) -> dict:
+    require_audio_rights(payload.rights_confirmed)
+    url, platform, host = await validate_audio_source(payload.input)
+    reservation = await reserve_action(user, "parse", platform, host)
+    action_id = reservation["actionId"]
+    try:
+        async with parse_slots:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(parse_audio, url, platform), timeout=settings.parse_timeout_seconds
+            )
+        parsed = store.add_parsed(
+            user_id=user.id, url=url, platform=platform, title=result["title"],
+            thumbnail=result["thumbnail"], duration=result["duration"], formats=result["formats"],
+            kind="audio", author=result["author"], official_url=result["official_url"],
+        )
+        await finish_action(user, action_id, "completed", title=parsed.title)
+        store.cleanup()
+        return {
+            "parseId": parsed.id,
+            "platform": platform,
+            "title": parsed.title,
+            "author": parsed.author,
+            "coverUrl": parsed.thumbnail,
+            "durationSeconds": parsed.duration,
+            "qualities": result["qualities"],
+            "downloadAvailable": result["download_available"],
+            "officialUrl": result["official_url"],
+            "notice": result["notice"],
+            "usage": {"usedToday": reservation["usedToday"], "dailyLimit": reservation["dailyLimit"]},
+        }
+    except asyncio.TimeoutError as exc:
+        await finish_action(user, action_id, "failed", error_code="AUDIO_PARSE_TIMEOUT")
+        raise HTTPException(504, "音频解析超时，请稍后重试。") from exc
+    except Exception as exc:
+        await finish_action(user, action_id, "failed", error_code="AUDIO_PARSE_FAILED")
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(422, str(exc)) from exc
+
+
 async def run_download(job: DownloadJob, user: User, parsed, selected: dict, max_bytes: int) -> None:
     job.status = "downloading"
     output_dir = settings.temp_dir / job.id
@@ -165,11 +218,51 @@ async def run_download(job: DownloadJob, user: User, parsed, selected: dict, max
             pass
 
 
+async def run_audio_download(job: DownloadJob, user: User, parsed, selected: dict, max_bytes: int) -> None:
+    job.status = "downloading"
+    output_dir = settings.temp_dir / job.id
+    try:
+        async with download_slots:
+            path, filename, content_type = await asyncio.wait_for(
+                asyncio.to_thread(
+                    download_audio, url=parsed.url, title=parsed.title, selected_format=selected,
+                    output_dir=output_dir, max_bytes=max_bytes,
+                    on_progress=lambda value: setattr(job, "progress", value),
+                ),
+                timeout=settings.download_timeout_seconds,
+            )
+        job.file_path = path
+        job.filename = filename
+        job.content_type = content_type
+        job.status = "completed"
+        job.progress = 100
+        await finish_action(
+            user, job.action_id, "completed", title=parsed.title,
+            content_type=content_type, content_length=path.stat().st_size,
+        )
+    except asyncio.TimeoutError:
+        job.status = "failed"
+        job.error = "音频处理任务超时。"
+        shutil.rmtree(output_dir, ignore_errors=True)
+        try:
+            await finish_action(user, job.action_id, "failed", error_code="AUDIO_DOWNLOAD_TIMEOUT")
+        except Exception:
+            pass
+    except Exception as exc:
+        job.status = "failed"
+        job.error = str(exc)
+        shutil.rmtree(output_dir, ignore_errors=True)
+        try:
+            await finish_action(user, job.action_id, "failed", error_code="AUDIO_DOWNLOAD_FAILED")
+        except Exception:
+            pass
+
+
 @app.post("/api/download", status_code=202)
 async def create_download(payload: DownloadRequest, user: User = Depends(current_user)) -> dict[str, str]:
     require_rights(payload.rights_confirmed)
     parsed = store.parsed.get(payload.parse_id)
-    if not parsed or parsed.user_id != user.id:
+    if not parsed or parsed.user_id != user.id or parsed.kind != "video":
         raise HTTPException(404, "解析记录已过期，请重新解析。")
     selected = parsed.formats.get(payload.format_id)
     if not selected:
@@ -178,6 +271,22 @@ async def create_download(payload: DownloadRequest, user: User = Depends(current
     reservation = await reserve_action(user, "download", parsed.platform, host)
     job = store.add_job(user_id=user.id, parse_id=parsed.id, action_id=reservation["actionId"])
     asyncio.create_task(run_download(job, user, parsed, selected, int(reservation["maxVideoBytes"])))
+    return {"jobId": job.id, "status": job.status}
+
+
+@app.post("/api/audio/download", status_code=202)
+async def create_audio_download(payload: AudioDownloadRequest, user: User = Depends(current_user)) -> dict[str, str]:
+    require_audio_rights(payload.rights_confirmed)
+    parsed = store.parsed.get(payload.parse_id)
+    if not parsed or parsed.user_id != user.id or parsed.kind != "audio":
+        raise HTTPException(404, "音频解析记录已过期，请重新解析。")
+    selected = parsed.formats.get(payload.format_id)
+    if not selected:
+        raise HTTPException(400, "所选音频格式无效，或该内容不允许下载。")
+    host = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(parsed.url).hostname or ""
+    reservation = await reserve_action(user, "download", parsed.platform, host)
+    job = store.add_job(user_id=user.id, parse_id=parsed.id, action_id=reservation["actionId"])
+    asyncio.create_task(run_audio_download(job, user, parsed, selected, int(reservation["maxVideoBytes"])))
     return {"jobId": job.id, "status": job.status}
 
 
@@ -202,7 +311,7 @@ async def job_file(job_id: str, user: User = Depends(current_user)) -> FileRespo
     if not job or job.user_id != user.id:
         raise HTTPException(404, "下载任务不存在或已过期。")
     if job.status != "completed" or not job.file_path or not job.file_path.is_file():
-        raise HTTPException(409, "视频文件尚未准备完成。")
+        raise HTTPException(409, "文件尚未准备完成。")
     return FileResponse(
         job.file_path,
         media_type=job.content_type,
