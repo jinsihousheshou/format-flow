@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Copy, Download, Gauge, KeyRound, LoaderCircle, RefreshCw, ShieldAlert, Users } from "lucide-react";
+import { AlertCircle, Ban, CheckCircle2, Copy, Download, Gauge, KeyRound, LoaderCircle, RefreshCw, ShieldAlert, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import SiteHeader from "../../components/site-header";
 import { useAuth } from "../../components/auth-provider";
@@ -20,6 +20,7 @@ export default function AdminPage() {
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [form, setForm] = useState({ planType: "monthly", count: 1, validityDays: 30, conversionLimit: 50, codeExpiresDays: 30, note: "" });
 
@@ -37,6 +38,11 @@ export default function AdminPage() {
   }, [auth.account.isAdmin, callAdmin]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const generate = async () => {
     setBusy(true); setMessage("");
@@ -59,13 +65,24 @@ export default function AdminPage() {
     catch (error) { setMessage(error instanceof Error ? error.message : "更新失败。"); }
     finally { setBusy(false); }
   };
-  const copyCodes = async () => { await navigator.clipboard.writeText(generatedCodes.join("\n")); setMessage("兑换码已复制。"); };
+  const copyCodes = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedCodes.join("\n"));
+      setToast({ type: "success", text: generatedCodes.length > 1 ? `已复制 ${generatedCodes.length} 个兑换码` : "兑换码已复制到剪贴板" });
+    } catch {
+      setToast({ type: "error", text: "复制失败，请长按兑换码手动复制" });
+    }
+  };
   const exportCodes = () => { const blob = new Blob([generatedCodes.join("\n")], { type: "text/plain;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `format-flow-codes-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); URL.revokeObjectURL(a.href); };
 
   if (auth.loading) return <main className="grid min-h-screen place-items-center bg-[#fbfbfe]"><LoaderCircle className="h-7 w-7 animate-spin text-violet-600" /></main>;
   if (!auth.session || !auth.account.isAdmin) return <main className="min-h-screen bg-[#fbfbfe]"><SiteHeader /><div className="mx-auto max-w-xl px-5 py-24 text-center"><ShieldAlert className="mx-auto h-12 w-12 text-rose-500" /><h1 className="mt-5 text-2xl font-bold">无权访问管理后台</h1><p className="mt-3 text-sm leading-6 text-slate-500">管理员权限由数据库服务端验证，修改网址或前端代码无法获得后台权限。</p></div></main>;
 
-  return <main className="min-h-screen bg-[#f7f7fc]"><SiteHeader /><section className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
+  return <main className="min-h-screen bg-[#f7f7fc]"><SiteHeader />
+    {toast && <div role="status" aria-live="polite" className={`fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl backdrop-blur sm:right-6 sm:top-6 ${toast.type === "success" ? "border-emerald-200 bg-emerald-50/95 text-emerald-800" : "border-rose-200 bg-rose-50/95 text-rose-800"}`}>
+      {toast.type === "success" ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertCircle className="h-5 w-5 shrink-0" />}{toast.text}
+    </div>}
+    <section className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
     <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-violet-600">安全管理后台</p><h1 className="mt-2 text-3xl font-bold text-slate-900">运营概览</h1></div><button onClick={() => void load()} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white"><RefreshCw className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} /></button></div>
     {message && <p className="mt-5 rounded-xl bg-violet-50 p-3 text-sm text-violet-800">{message}</p>}
     <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[["注册用户", dashboard.stats.registeredUsers], ["已激活用户", dashboard.stats.activatedUsers], ["今日转换", dashboard.stats.todayConversions], ["兑换码总数", dashboard.stats.totalCodes]].map(([label, value]) => <article key={String(label)} className="rounded-[22px] border border-slate-200 bg-white p-5"><p className="text-sm text-slate-500">{label}</p><p className="mt-3 text-3xl font-bold text-slate-900">{value}</p></article>)}</div>
