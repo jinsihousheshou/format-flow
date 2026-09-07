@@ -2,6 +2,7 @@
 
 import { AlertCircle, Ban, CheckCircle2, Copy, Download, Gauge, KeyRound, LoaderCircle, RefreshCw, ShieldAlert, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import AuthModal from "../../components/auth-modal";
 import SiteHeader from "../../components/site-header";
 import { useAuth } from "../../components/auth-provider";
 import { edgeFunction } from "../../lib/supabase";
@@ -23,6 +24,7 @@ export default function AdminPage() {
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [note, setNote] = useState("");
+  const [authOpen, setAuthOpen] = useState(false);
 
   const callAdmin = useCallback(async <T,>(action: string, data: Record<string, unknown> = {}) => {
     if (!auth.session) throw new Error("请先登录管理员账号。");
@@ -76,7 +78,8 @@ export default function AdminPage() {
   const exportCodes = () => { const blob = new Blob([generatedCodes.join("\n")], { type: "text/plain;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `format-flow-codes-${new Date().toISOString().slice(0, 10)}.txt`; a.click(); URL.revokeObjectURL(a.href); };
 
   if (auth.loading) return <main className="grid min-h-screen place-items-center bg-[#fbfbfe]"><LoaderCircle className="h-7 w-7 animate-spin text-violet-600" /></main>;
-  if (!auth.session || !auth.account.isAdmin) return <main className="min-h-screen bg-[#fbfbfe]"><SiteHeader /><div className="mx-auto max-w-xl px-5 py-24 text-center"><ShieldAlert className="mx-auto h-12 w-12 text-rose-500" /><h1 className="mt-5 text-2xl font-bold">无权访问管理后台</h1><p className="mt-3 text-sm leading-6 text-slate-500">管理员权限由数据库服务端验证，修改网址或前端代码无法获得后台权限。</p></div></main>;
+  if (!auth.session) return <main className="min-h-screen bg-[#fbfbfe]"><SiteHeader /><div className="mx-auto max-w-xl px-5 py-24 text-center"><ShieldAlert className="mx-auto h-12 w-12 text-violet-600" /><h1 className="mt-5 text-2xl font-bold">请先登录管理员账号</h1><p className="mt-3 text-sm leading-6 text-slate-500">登录成功后，系统会重新读取管理员权限并打开激活码管理页面。</p><button onClick={() => setAuthOpen(true)} className="mt-6 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white">登录管理员账号</button></div><AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialMode="login" /></main>;
+  if (!auth.account.isAdmin) return <main className="min-h-screen bg-[#fbfbfe]"><SiteHeader /><div className="mx-auto max-w-xl px-5 py-24 text-center"><ShieldAlert className="mx-auto h-12 w-12 text-rose-500" /><h1 className="mt-5 text-2xl font-bold">当前账号不是管理员</h1><p className="mt-3 text-sm leading-6 text-slate-500">当前登录邮箱：{auth.session.user.email}。请退出后使用已加入管理员名单的账号登录。</p></div></main>;
 
   return <main className="min-h-screen bg-[#f7f7fc]"><SiteHeader />
     {toast && <div role="status" aria-live="polite" className={`fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl backdrop-blur sm:right-6 sm:top-6 ${toast.type === "success" ? "border-emerald-200 bg-emerald-50/95 text-emerald-800" : "border-rose-200 bg-rose-50/95 text-rose-800"}`}>
