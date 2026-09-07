@@ -16,6 +16,10 @@ export function json(request: Request, body: unknown, status = 200) {
 }
 
 export function errorResponse(request: Request, error: unknown) {
-  const message = error instanceof Error ? error.message : "服务器处理失败。";
-  return json(request, { error: message }, message.includes("无权") ? 403 : 400);
+  const structuredMessage = error && typeof error === "object" && "message" in error
+    ? String((error as { message?: unknown }).message || "")
+    : "";
+  const message = error instanceof Error ? error.message : structuredMessage || "服务器处理失败。";
+  const forbidden = ["无权", "登录", "激活后使用", "已被停用"].some((text) => message.includes(text));
+  return json(request, { error: message }, forbidden ? 403 : 400);
 }
