@@ -1,7 +1,10 @@
 from dataclasses import dataclass
+import asyncio
+import time
 from typing import Any
 
-import httpx
+from curl_cffi import requests
+from curl_cffi.requests.errors import RequestsError
 from fastapi import Header, HTTPException
 
 from .config import settings
@@ -21,6 +24,17 @@ def _headers(token: str) -> dict[str, str]:
     }
 
 
+def _request(method: str, url: str, *, headers: dict[str, str], json: dict[str, Any] | None = None):
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            return requests.request(method, url, headers=headers, json=json, timeout=30, impersonate="chrome")
+        except RequestsError as error:
+            last_error = error
+            time.sleep(attempt + 1)
+    raise last_error or RuntimeError("request failed")
+
+
 async def current_user(authorization: str | None = Header(default=None)) -> User:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "请先登录。")
@@ -28,9 +42,10 @@ async def current_user(authorization: str | None = Header(default=None)) -> User
     if not token:
         raise HTTPException(401, "登录信息无效。")
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(f"{settings.supabase_url}/auth/v1/user", headers=_headers(token))
-    except httpx.HTTPError as exc:
+        response = await asyncio.to_thread(
+            _request, "GET", f"{settings.supabase_url}/auth/v1/user", headers=_headers(token)
+        )
+    except RequestsError as exc:
         raise HTTPException(503, "暂时无法验证登录状态。") from exc
     if response.status_code != 200:
         raise HTTPException(401, "登录已过期，请重新登录。")
@@ -42,11 +57,11 @@ async def current_user(authorization: str | None = Header(default=None)) -> User
 
 async def _rpc(user: User, function: str, payload: dict[str, Any]) -> Any:
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(
-                f"{settings.supabase_url}/rest/v1/rpc/{function}", headers=_headers(user.token), json=payload
-            )
-    except httpx.HTTPError as exc:
+        response = await asyncio.to_thread(
+            _request, "POST", f"{settings.supabase_url}/rest/v1/rpc/{function}",
+            headers=_headers(user.token), json=payload,
+        )
+    except RequestsError as exc:
         raise HTTPException(503, "权限服务暂时不可用。") from exc
     data = response.json() if response.content else None
     if response.status_code >= 400:
