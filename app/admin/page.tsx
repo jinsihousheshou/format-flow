@@ -25,7 +25,7 @@ export default function AdminPage() {
 
   const callAdmin = useCallback(async <T,>(action: string, data: Record<string, unknown> = {}) => {
     if (!auth.session) throw new Error("请先登录管理员账号。");
-    return edgeFunction<T>("admin-api", { action, ...data }, auth.session.access_token);
+    return edgeFunction<T>("admin-api", { action, ...data }, await auth.getAccessToken());
   }, [auth.session]);
 
   const load = useCallback(async () => {

@@ -16,3 +16,6 @@ backend/.env
 __pycache__/
 .pytest_cache/
 backend/tmp*/
+backend/.runtime/
+.tools/
+.wrangler-local/

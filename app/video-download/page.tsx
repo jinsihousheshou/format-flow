@@ -105,9 +105,9 @@ export default function VideoDownloadPage() {
   const loadHistory = useCallback(async () => {
     if (!auth.session || !isSupabaseConfigured) { setHistory([]); return; }
     try {
-      setHistory(await supabaseRequest<VideoLog[]>("/rest/v1/video_link_logs?select=id,platform,source_host,status,title,error_code,created_at&action=eq.parse&order=created_at.desc&limit=8", {}, auth.session.access_token));
+      setHistory(await supabaseRequest<VideoLog[]>("/rest/v1/video_link_logs?select=id,platform,source_host,status,title,error_code,created_at&action=eq.parse&order=created_at.desc&limit=8", {}, await auth.getAccessToken()));
     } catch { setHistory([]); }
-  }, [auth.session]);
+  }, [auth.getAccessToken, auth.session]);
   useEffect(() => { void loadHistory(); }, [loadHistory]);
 
   const requireAccess = () => {
@@ -134,9 +134,10 @@ export default function VideoDownloadPage() {
     if (!requireAccess()) return;
     setBusy("parse");
     try {
+      const accessToken = await auth.getAccessToken();
       const parsed = isVideoApiConfigured
-        ? await videoApiRequest<ParseResult>("/api/parse", auth.session!.access_token, { method: "POST", body: JSON.stringify({ input, rights_confirmed: true }) })
-        : await edgeFunction<ParseResult>("video-link", { action: "parse", input, rightsConfirmed: true }, auth.session!.access_token);
+        ? await videoApiRequest<ParseResult>("/api/parse", accessToken, { method: "POST", body: JSON.stringify({ input, rights_confirmed: true }) })
+        : await edgeFunction<ParseResult>("video-link", { action: "parse", input, rightsConfirmed: true }, accessToken);
       setResult(parsed); setQuality(parsed.qualities[0]?.id || "");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "解析失败，请稍后重试。"); }
     finally { setBusy(null); await loadHistory(); }
@@ -148,22 +149,23 @@ export default function VideoDownloadPage() {
     try {
       let response: Response;
       if (result.parseId && isVideoApiConfigured) {
-        const created = await videoApiRequest<{ jobId: string }>("/api/download", auth.session!.access_token, {
+        const created = await videoApiRequest<{ jobId: string }>("/api/download", await auth.getAccessToken(), {
           method: "POST", body: JSON.stringify({ parse_id: result.parseId, format_id: quality, rights_confirmed: true }),
         });
         const deadline = Date.now() + 10 * 60_000;
         while (true) {
-          const job = await videoApiRequest<{ status: string; progress: number; error: string | null }>(`/api/jobs/${created.jobId}`, auth.session!.access_token, {}, 15_000);
+          const job = await videoApiRequest<{ status: string; progress: number; error: string | null }>(`/api/jobs/${created.jobId}`, await auth.getAccessToken(), {}, 15_000);
           setProgress(job.progress);
           if (job.status === "completed") break;
           if (job.status === "failed") throw new Error(job.error || "视频下载任务失败。");
           if (Date.now() >= deadline) throw new Error("视频下载任务超时。");
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        response = await videoApiFile(`/api/jobs/${created.jobId}/file`, auth.session!.access_token);
+        response = await videoApiFile(`/api/jobs/${created.jobId}/file`, await auth.getAccessToken());
       } else {
+        const accessToken = await auth.getAccessToken();
         response = await fetch(`${supabaseUrl}/functions/v1/video-link`, {
-          method: "POST", headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${auth.session!.access_token}`, "Content-Type": "application/json" },
+          method: "POST", headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({ action: "download", input, qualityId: quality, rightsConfirmed: true }),
         });
       }

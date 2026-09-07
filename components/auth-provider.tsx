@@ -30,6 +30,7 @@ type AuthContextValue = {
   sendPasswordReset: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   redeemCode: (code: string) => Promise<void>;
+  getAccessToken: () => Promise<string>;
   refreshAccount: () => Promise<void>;
   reserveConversion: (input: { kind: string; inputFormat: string; outputFormat: string; fileSize: number }) => Promise<Reservation>;
   finishConversion: (conversionId: string, status: "completed" | "failed", errorMessage?: string) => Promise<void>;
@@ -62,23 +63,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return next;
   }, [persistSession]);
 
+  const getValidSession = useCallback(async () => {
+    if (!session) throw new Error("请先登录。");
+    const almostExpired = (session.expires_at ?? 0) * 1000 < Date.now() + 60_000;
+    return almostExpired ? refreshSession(session) : session;
+  }, [refreshSession, session]);
+
+  const loadAccount = useCallback(async (current: AuthSession) => {
+    const [entitlements, conversions, roles] = await Promise.all([
+      supabaseRequest<Entitlement[]>("/rest/v1/entitlements?select=plan_type,activated_at,expires_at,remaining_conversions,status&limit=1", {}, current.access_token),
+      supabaseRequest<ConversionLog[]>("/rest/v1/conversion_logs?select=id,kind,input_format,output_format,status,created_at,error_message&order=created_at.desc&limit=10", {}, current.access_token),
+      supabaseRequest<{ user_id: string }[]>("/rest/v1/admin_users?select=user_id&limit=1", {}, current.access_token),
+    ]);
+    setAccount({ entitlement: entitlements[0] ?? null, conversions, isAdmin: roles.length > 0 });
+  }, []);
+
   const refreshAccount = useCallback(async () => {
     if (!session) {
       setAccount(emptyAccount);
       return;
     }
     try {
-      const [entitlements, conversions, roles] = await Promise.all([
-        supabaseRequest<Entitlement[]>("/rest/v1/entitlements?select=plan_type,activated_at,expires_at,remaining_conversions,status&limit=1", {}, session.access_token),
-        supabaseRequest<ConversionLog[]>("/rest/v1/conversion_logs?select=id,kind,input_format,output_format,status,created_at,error_message&order=created_at.desc&limit=10", {}, session.access_token),
-        supabaseRequest<{ user_id: string }[]>("/rest/v1/admin_users?select=user_id&limit=1", {}, session.access_token),
-      ]);
-      setAccount({ entitlement: entitlements[0] ?? null, conversions, isAdmin: roles.length > 0 });
+      await loadAccount(await getValidSession());
     } catch (error) {
       console.error(error);
       setAccount(emptyAccount);
     }
-  }, [session]);
+  }, [getValidSession, loadAccount, session]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -146,33 +157,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePassword = async (password: string) => {
-    if (!session) throw new Error("请先登录。");
-    await supabaseRequest("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password }) }, session.access_token);
+    const current = await getValidSession();
+    await supabaseRequest("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password }) }, current.access_token);
   };
 
   const redeemCode = async (code: string) => {
-    if (!session) throw new Error("请先登录。");
-    await edgeFunction("redeem-code", { code }, session.access_token);
-    await refreshAccount();
+    const current = await getValidSession();
+    await edgeFunction("redeem-code", { code }, current.access_token);
+    await loadAccount(current);
   };
 
   const reserveConversion = async (input: { kind: string; inputFormat: string; outputFormat: string; fileSize: number }) => {
     if (!session) throw new Error("该功能需要激活后使用，请先登录并输入兑换码。");
-    const result = await edgeFunction<Reservation>("authorize-conversion", input, session.access_token);
-    await refreshAccount();
+    const current = await getValidSession();
+    const result = await edgeFunction<Reservation>("authorize-conversion", input, current.access_token);
+    await loadAccount(current);
     return result;
   };
 
   const finishConversion = async (conversionId: string, status: "completed" | "failed", errorMessage?: string) => {
     if (!session) return;
-    await edgeFunction("finish-conversion", { conversionId, status, errorMessage }, session.access_token).catch(console.error);
-    await refreshAccount();
+    const current = await getValidSession().catch(() => null);
+    if (!current) return;
+    await edgeFunction("finish-conversion", { conversionId, status, errorMessage }, current.access_token).catch(console.error);
+    await loadAccount(current).catch(console.error);
   };
+
+  const getAccessToken = useCallback(async () => (await getValidSession()).access_token, [getValidSession]);
 
   const value = useMemo<AuthContextValue>(() => ({
     configured: isSupabaseConfigured, loading, session, account, signUp, signIn, signOut,
-    sendPasswordReset, updatePassword, redeemCode, refreshAccount, reserveConversion, finishConversion,
-  }), [loading, session, account, refreshAccount]);
+    sendPasswordReset, updatePassword, redeemCode, getAccessToken, refreshAccount, reserveConversion, finishConversion,
+  }), [loading, session, account, refreshAccount, getAccessToken]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
