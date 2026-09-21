@@ -1,206 +1,111 @@
 "use client";
 
-import {
-  ArrowRight,
-  Check,
-  ClipboardCheck,
-  Copy,
-  FileArchive,
-  FileSearch,
-  FileSpreadsheet,
-  FileText,
-  Presentation,
-  ScanText,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowRight, Check, FileArchive, FileSpreadsheet, FileText, KeyRound, LoaderCircle, Presentation, ScanText, ShieldCheck, Sparkles, UploadCloud, X } from "lucide-react";
+import { useRef, useState } from "react";
+import AuthModal from "./auth-modal";
+import { useAuth } from "./auth-provider";
+import { convertPdfToOffice, formatWord, processPdfFiles, rebuildPpt, recognizeFile, type OcrOutput, type PdfBatchMode, type PdfOfficeFormat } from "../lib/document-tools";
 
-type ServiceItem = {
-  title: string;
-  eyebrow: string;
-  description: string;
-  deliverables: string[];
-  price: string;
-  icon: typeof FileText;
-  tone: string;
-  iconTone: string;
-};
+type ToolId = "pdf-office" | "ocr" | "word-format" | "resume" | "ppt-format" | "pdf-batch";
+type ToolItem = { id: ToolId; title: string; eyebrow: string; description: string; results: string[]; icon: typeof FileText; tone: string; iconTone: string; accept: string; multiple?: boolean; warning: string };
 
-const services: ServiceItem[] = [
-  {
-    title: "PDF 转 Word / Excel / PPT",
-    eyebrow: "复杂版式还原",
-    description: "不只是机器转换，人工检查字体、段落、表格和图片位置。",
-    deliverables: ["可编辑 Office 文件", "基础版式校对", "交付前抽查"],
-    price: "9.9 元起",
-    icon: FileSpreadsheet,
-    tone: "from-blue-500 to-cyan-400",
-    iconTone: "bg-blue-50 text-blue-600",
-  },
-  {
-    title: "图片 / 扫描件转文字",
-    eyebrow: "OCR + 人工校对",
-    description: "识别截图、照片和扫描版 PDF，整理为可复制、可编辑文字。",
-    deliverables: ["文字识别", "错字与段落校对", "Word / TXT 交付"],
-    price: "9.9 元起",
-    icon: ScanText,
-    tone: "from-violet-500 to-fuchsia-400",
-    iconTone: "bg-violet-50 text-violet-600",
-  },
-  {
-    title: "Word 规范排版",
-    eyebrow: "目录 · 页码 · 样式",
-    description: "统一标题、正文、行距与页眉页脚，自动目录可更新。",
-    deliverables: ["标题层级统一", "自动目录与页码", "一次修改"],
-    price: "20 元起",
-    icon: FileText,
-    tone: "from-orange-500 to-amber-400",
-    iconTone: "bg-orange-50 text-orange-600",
-  },
-  {
-    title: "简历美化",
-    eyebrow: "突出重点信息",
-    description: "在不虚构经历的前提下，改善层级、留白与阅读顺序。",
-    deliverables: ["一页式版面优化", "Word + PDF", "一次细节修改"],
-    price: "30 元起",
-    icon: Sparkles,
-    tone: "from-rose-500 to-orange-400",
-    iconTone: "bg-rose-50 text-rose-600",
-  },
-  {
-    title: "PPT 简单排版",
-    eyebrow: "统一视觉风格",
-    description: "统一字体、颜色、间距和页面结构，让内容更清晰易读。",
-    deliverables: ["母版风格统一", "图文对齐", "源文件交付"],
-    price: "30 元起",
-    icon: Presentation,
-    tone: "from-emerald-500 to-teal-400",
-    iconTone: "bg-emerald-50 text-emerald-600",
-  },
-  {
-    title: "合并 / 拆分 / 压缩",
-    eyebrow: "批量文件处理",
-    description: "按指定顺序整理多个文件，也可拆页、压缩或批量改名。",
-    deliverables: ["顺序确认", "批量处理", "文件清单核对"],
-    price: "5 元起",
-    icon: FileArchive,
-    tone: "from-indigo-500 to-violet-500",
-    iconTone: "bg-indigo-50 text-indigo-600",
-  },
+const tools: ToolItem[] = [
+  { id: "pdf-office", title: "PDF 转 Word / Excel / PPT", eyebrow: "真实 Office 文件", description: "提取文字生成 DOCX/XLSX，或将每页完整放入 PPT，完成后直接下载。", results: ["Word 可编辑文字", "Excel 分页分行", "PPT 保留页面视觉"], icon: FileSpreadsheet, tone: "from-blue-500 to-cyan-400", iconTone: "bg-blue-50 text-blue-600", accept: ".pdf,application/pdf", warning: "复杂表格、公式和特殊字体无法保证原样还原；扫描版 PDF 请先使用 OCR。" },
+  { id: "ocr", title: "图片 / 扫描件转文字", eyebrow: "中英文 OCR", description: "识别 JPG、PNG、WEBP 或扫描版 PDF，导出 TXT 或 Word。", results: ["中文 + 英文识别", "多页 PDF 逐页处理", "TXT / DOCX 下载"], icon: ScanText, tone: "from-violet-500 to-fuchsia-400", iconTone: "bg-violet-50 text-violet-600", accept: ".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf", warning: "识别准确率取决于图片清晰度；首次使用需要下载 OCR 语言包。" },
+  { id: "word-format", title: "Word 规范排版", eyebrow: "目录 · 页码 · 样式", description: "提取 DOCX 文字，重新生成标题层级、正文缩进、目录与页码。", results: ["标题样式统一", "自动目录字段", "页码与正文格式"], icon: FileText, tone: "from-orange-500 to-amber-400", iconTone: "bg-orange-50 text-orange-600", accept: ".docx,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain", warning: "该功能会重建文档文字版式，原文件中的复杂表格、图片、批注和公式不会保留。" },
+  { id: "resume", title: "简历美化", eyebrow: "一页式清晰版面", description: "从 DOCX 或 TXT 提取内容，自动生成层级清晰的蓝色商务简历。", results: ["信息层级优化", "统一字体与留白", "DOCX 源文件下载"], icon: Sparkles, tone: "from-rose-500 to-orange-400", iconTone: "bg-rose-50 text-rose-600", accept: ".docx,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain", warning: "工具只调整版式，不修改或虚构简历内容；复杂图片和表格不会保留。" },
+  { id: "ppt-format", title: "PPT 简单排版", eyebrow: "统一文字视觉", description: "读取每页文字，重建为统一字体、颜色、间距和页码的 PPT。", results: ["页面文字提取", "统一商务风格", "PPTX 源文件下载"], icon: Presentation, tone: "from-emerald-500 to-teal-400", iconTone: "bg-emerald-50 text-emerald-600", accept: ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation", warning: "当前为文字版式重建，源文件中的图片、动画、图表和音视频不会保留。" },
+  { id: "pdf-batch", title: "PDF 合并 / 拆分 / 压缩", eyebrow: "浏览器本地处理", description: "选择多个 PDF 合并，或将单个 PDF 按页拆分、重新压缩。", results: ["多文件顺序合并", "逐页拆分 ZIP", "PDF 结构压缩"], icon: FileArchive, tone: "from-indigo-500 to-violet-500", iconTone: "bg-indigo-50 text-indigo-600", accept: ".pdf,application/pdf", multiple: true, warning: "结构压缩对扫描图片型 PDF 的体积改善有限；加密 PDF 无法处理。" },
 ];
 
+function extensionOf(file: File) { return file.name.split(".").pop()?.toLowerCase() || "unknown"; }
+
 export default function ManualServiceSection() {
-  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
-  const [pageCount, setPageCount] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [notes, setNotes] = useState("");
-  const [copied, setCopied] = useState(false);
-  const xianyuUrl = process.env.NEXT_PUBLIC_XIANYU_URL?.trim();
+  const auth = useAuth();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedTool, setSelectedTool] = useState<ToolItem | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [pdfOfficeFormat, setPdfOfficeFormat] = useState<PdfOfficeFormat>("docx");
+  const [ocrOutput, setOcrOutput] = useState<OcrOutput>("docx");
+  const [pdfBatchMode, setPdfBatchMode] = useState<PdfBatchMode>("merge");
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState("");
+  const [authOpen, setAuthOpen] = useState(false);
+  const entitlement = auth.account.entitlement;
+  const hasActiveEntitlement = Boolean(entitlement && entitlement.status === "active" && (!entitlement.expires_at || new Date(entitlement.expires_at) > new Date()) && (entitlement.remaining_conversions === null || entitlement.remaining_conversions > 0));
 
-  const consultationText = useMemo(() => {
-    if (!selectedService) return "";
-    return [
-      `你好，我想咨询：${selectedService.title}`,
-      pageCount.trim() ? `文件数量/页数：${pageCount.trim()}` : "文件数量/页数：待确认",
-      deadline.trim() ? `期望时间：${deadline.trim()}` : "期望时间：不加急",
-      notes.trim() ? `具体要求：${notes.trim()}` : "具体要求：请先帮我看文件后报价",
-      "我会先发送脱敏截图或样例，请确认价格和交付时间后再开始。",
-    ].join("\n");
-  }, [deadline, notes, pageCount, selectedService]);
-
-  const copyConsultation = async () => {
-    if (!consultationText) return;
-    await navigator.clipboard.writeText(consultationText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2400);
+  const openTool = (tool: ToolItem) => {
+    if (!hasActiveEntitlement) { setAuthOpen(true); return; }
+    setSelectedTool(tool); setFiles([]); setProgress(0); setMessage(""); setPdfBatchMode("merge");
   };
 
-  const continueToXianyu = async () => {
-    await copyConsultation();
-    if (xianyuUrl) window.open(xianyuUrl, "_blank", "noopener,noreferrer");
+  const chooseFiles = (list: FileList | null) => {
+    if (!selectedTool || !list?.length) return;
+    const chosen = Array.from(list);
+    const selected = selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" ? chosen : chosen.slice(0, 1);
+    if (selected.reduce((sum, file) => sum + file.size, 0) > 50 * 1024 * 1024) { setMessage("文件总大小超过 50MB，请选择更小的文件。"); setFiles([]); return; }
+    setFiles(selected); setMessage(""); setProgress(0);
+  };
+
+  const outputFormat = () => {
+    if (!selectedTool) return "unknown";
+    if (selectedTool.id === "pdf-office") return pdfOfficeFormat;
+    if (selectedTool.id === "ocr") return ocrOutput;
+    if (selectedTool.id === "pdf-batch") return pdfBatchMode === "split" ? "zip" : "pdf";
+    if (selectedTool.id === "ppt-format") return "pptx";
+    return "docx";
+  };
+
+  const runTool = async () => {
+    if (!selectedTool || !files.length || processing) return;
+    if (selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" && files.length < 2) { setMessage("合并至少需要选择 2 个 PDF 文件。"); return; }
+    setProcessing(true); setProgress(2); setMessage("正在验证激活权限...");
+    let conversionId: string | null = null;
+    try {
+      const reservation = await auth.reserveConversion({ kind: "document", inputFormat: selectedTool.id === "pdf-batch" && files.length > 1 ? "pdf-multiple" : extensionOf(files[0]), outputFormat: outputFormat(), fileSize: files.reduce((sum, file) => sum + file.size, 0) });
+      conversionId = reservation.conversionId;
+      const update = (nextProgress: number, nextMessage: string) => { setProgress(Math.max(2, Math.min(96, nextProgress))); setMessage(nextMessage); };
+      if (selectedTool.id === "pdf-office") await convertPdfToOffice(files[0], pdfOfficeFormat, update);
+      if (selectedTool.id === "ocr") await recognizeFile(files[0], ocrOutput, update);
+      if (selectedTool.id === "word-format") await formatWord(files[0], false, update);
+      if (selectedTool.id === "resume") await formatWord(files[0], true, update);
+      if (selectedTool.id === "ppt-format") await rebuildPpt(files[0], update);
+      if (selectedTool.id === "pdf-batch") await processPdfFiles(files, pdfBatchMode, update);
+      setProgress(100); setMessage("处理完成，文件已开始下载。");
+      await auth.finishConversion(conversionId, "completed");
+    } catch (error) {
+      console.error(error);
+      const errorMessage = error instanceof Error ? error.message : "文件处理失败";
+      setMessage(errorMessage.includes("激活") || errorMessage.includes("登录") ? errorMessage : `处理失败：${errorMessage}`);
+      if (conversionId) await auth.finishConversion(conversionId, "failed", errorMessage);
+    } finally { setProcessing(false); }
   };
 
   return (
     <section id="manual-services" className="relative z-10 mx-auto max-w-7xl scroll-mt-24 px-5 pb-10 pt-12 sm:px-8 sm:pt-16 lg:px-10">
       <div className="overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_22px_70px_rgba(15,23,42,0.08)]">
         <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f8f7ff_0%,#ffffff_48%,#f0f9ff_100%)] px-6 py-9 sm:px-9 lg:flex lg:items-end lg:justify-between lg:gap-10">
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 shadow-sm">
-              <ClipboardCheck className="h-3.5 w-3.5" /> 人工精修服务
-            </span>
-            <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-950 sm:text-4xl">机器转换解决不了的，交给人工处理</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">先看文件、确认价格和交付时间，再开始处理。复杂表格、扫描件、目录页码和版式还原都可以单独说明。</p>
-          </div>
-          <div className="mt-5 flex shrink-0 flex-wrap gap-2 text-xs font-semibold text-slate-600 lg:mt-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-sm"><Check className="h-3.5 w-3.5 text-emerald-500" /> 先确认再下单</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-sm"><ShieldCheck className="h-3.5 w-3.5 text-blue-500" /> 隐私文件可脱敏</span>
-          </div>
+          <div className="max-w-3xl"><span className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 shadow-sm"><KeyRound className="h-3.5 w-3.5" /> 激活码解锁工具</span><h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-950 sm:text-4xl">文档转换与智能排版</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">选择工具、上传文件、完成转换并直接下载。处理前会验证登录账号和激活权益，每次成功授权计入转换记录。</p></div>
+          <div className="mt-5 flex shrink-0 flex-wrap gap-2 text-xs font-semibold text-slate-600 lg:mt-0"><span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-sm"><Check className="h-3.5 w-3.5 text-emerald-500" /> 实际生成文件</span><span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-sm"><ShieldCheck className="h-3.5 w-3.5 text-blue-500" /> 浏览器本地处理</span></div>
         </div>
-
         <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-7 lg:grid-cols-3">
-          {services.map((service) => {
-            const Icon = service.icon;
-            return (
-              <article key={service.title} className="group flex flex-col rounded-[22px] border border-slate-200 bg-white p-5 transition duration-200 hover:-translate-y-1 hover:border-violet-200 hover:shadow-xl hover:shadow-violet-950/5">
-                <div className="flex items-start justify-between gap-4">
-                  <span className={`grid h-12 w-12 place-items-center rounded-2xl ${service.iconTone}`}><Icon className="h-5 w-5" /></span>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{service.price}</span>
-                </div>
-                <p className="mt-5 text-xs font-semibold text-violet-600">{service.eyebrow}</p>
-                <h3 className="mt-1 text-lg font-bold text-slate-900">{service.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{service.description}</p>
-                <ul className="mt-4 space-y-2 text-xs text-slate-600">
-                  {service.deliverables.map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-500" />{item}</li>)}
-                </ul>
-                <button type="button" onClick={() => { setSelectedService(service); setCopied(false); }} className={`mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${service.tone} px-4 py-3 text-sm font-semibold text-white shadow-sm transition group-hover:shadow-md`}>
-                  免费看文件报价 <ArrowRight className="h-4 w-4" />
-                </button>
-              </article>
-            );
-          })}
+          {tools.map((tool) => { const Icon = tool.icon; return <article key={tool.id} className="group flex flex-col rounded-[22px] border border-slate-200 bg-white p-5 transition duration-200 hover:-translate-y-1 hover:border-violet-200 hover:shadow-xl hover:shadow-violet-950/5"><div className="flex items-start justify-between gap-4"><span className={`grid h-12 w-12 place-items-center rounded-2xl ${tool.iconTone}`}><Icon className="h-5 w-5" /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${hasActiveEntitlement ? "bg-emerald-50 text-emerald-700" : "bg-violet-50 text-violet-700"}`}>{hasActiveEntitlement ? "已解锁" : "激活后使用"}</span></div><p className="mt-5 text-xs font-semibold text-violet-600">{tool.eyebrow}</p><h3 className="mt-1 text-lg font-bold text-slate-900">{tool.title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{tool.description}</p><ul className="mt-4 space-y-2 text-xs text-slate-600">{tool.results.map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-500" />{item}</li>)}</ul><button type="button" onClick={() => openTool(tool)} className={`mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${tool.tone} px-4 py-3 text-sm font-semibold text-white shadow-sm transition group-hover:shadow-md`}>{hasActiveEntitlement ? "立即使用" : "登录并激活"} <ArrowRight className="h-4 w-4" /></button></article>; })}
         </div>
-
-        <div className="mx-5 mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-5 py-4 text-sm text-amber-950 sm:mx-7 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
-          <span className="flex items-start gap-2"><FileSearch className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />涉及身份证、合同、成绩单等敏感内容时，请先遮挡姓名、号码和联系方式。</span>
-          <span className="shrink-0 text-xs font-semibold text-amber-700">不承接代写、证件制作及违规内容</span>
-        </div>
+        <div className="mx-5 mb-5 flex items-start gap-2 rounded-2xl border border-blue-100 bg-blue-50/80 px-5 py-4 text-sm leading-6 text-blue-950 sm:mx-7 sm:mb-7"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />文件内容在当前浏览器中处理，不上传到本站服务器。请先阅读每项工具的格式保留限制，并只处理你拥有合法使用权的文件。</div>
       </div>
 
-      {selectedService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="presentation" onMouseDown={() => setSelectedService(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="service-dialog-title" className="max-h-[calc(100vh-32px)] w-full max-w-xl overflow-auto rounded-[26px] bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between border-b border-slate-100 px-5 py-5 sm:px-7">
-              <div>
-                <p className="text-xs font-semibold text-violet-600">免费预估工作量</p>
-                <h3 id="service-dialog-title" className="mt-1 text-xl font-bold text-slate-900">{selectedService.title}</h3>
-              </div>
-              <button type="button" onClick={() => setSelectedService(null)} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label="关闭"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="space-y-4 p-5 sm:p-7">
-              <label className="block text-sm font-semibold text-slate-700">文件数量或页数
-                <input value={pageCount} onChange={(event) => setPageCount(event.target.value)} maxLength={40} placeholder="例如：1 个 PDF，共 26 页" className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
-              </label>
-              <label className="block text-sm font-semibold text-slate-700">期望完成时间
-                <input value={deadline} onChange={(event) => setDeadline(event.target.value)} maxLength={40} placeholder="例如：明天下午 6 点前" className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
-              </label>
-              <label className="block text-sm font-semibold text-slate-700">具体要求
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={300} rows={4} placeholder="例如：需要保留原表格，标题样式统一，最终交付 Word 和 PDF" className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm font-normal leading-6 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
-              </label>
-              <div className="rounded-xl bg-slate-50 p-4">
-                <p className="text-xs font-semibold text-slate-500">将自动生成以下咨询内容</p>
-                <pre className="mt-2 whitespace-pre-wrap font-sans text-xs leading-5 text-slate-700">{consultationText}</pre>
-              </div>
-              <button type="button" onClick={() => void continueToXianyu()} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5">
-                {copied ? <ClipboardCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? "咨询内容已复制" : xianyuUrl ? "复制并前往闲鱼咨询" : "复制咨询内容"}
-              </button>
-              {!xianyuUrl && <p className="text-center text-xs leading-5 text-amber-700">闲鱼商品链接尚未配置；内容复制后，可直接粘贴给卖家。配置链接后会自动跳转。</p>}
-            </div>
-          </div>
-        </div>
-      )}
+      {selectedTool && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="presentation" onMouseDown={() => !processing && setSelectedTool(null)}><div role="dialog" aria-modal="true" aria-labelledby="document-tool-title" className="max-h-[calc(100vh-32px)] w-full max-w-xl overflow-auto rounded-[26px] bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-slate-100 px-5 py-5 sm:px-7"><div><p className="text-xs font-semibold text-violet-600">激活码工具</p><h3 id="document-tool-title" className="mt-1 text-xl font-bold text-slate-900">{selectedTool.title}</h3></div><button type="button" disabled={processing} onClick={() => setSelectedTool(null)} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40" aria-label="关闭"><X className="h-4 w-4" /></button></div><div className="space-y-4 p-5 sm:p-7">
+        {selectedTool.id === "pdf-office" && <label className="block text-sm font-semibold text-slate-700">输出格式<select value={pdfOfficeFormat} onChange={(event) => setPdfOfficeFormat(event.target.value as PdfOfficeFormat)} disabled={processing} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 font-normal outline-none focus:border-violet-400"><option value="docx">Word（DOCX，可编辑文字）</option><option value="xlsx">Excel（XLSX，分页分行）</option><option value="pptx">PowerPoint（PPTX，每页为图片）</option></select></label>}
+        {selectedTool.id === "ocr" && <label className="block text-sm font-semibold text-slate-700">输出格式<select value={ocrOutput} onChange={(event) => setOcrOutput(event.target.value as OcrOutput)} disabled={processing} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 font-normal outline-none focus:border-violet-400"><option value="docx">Word（DOCX）</option><option value="txt">纯文字（TXT）</option></select></label>}
+        {selectedTool.id === "pdf-batch" && <label className="block text-sm font-semibold text-slate-700">处理方式<select value={pdfBatchMode} onChange={(event) => { setPdfBatchMode(event.target.value as PdfBatchMode); setFiles([]); setMessage(""); }} disabled={processing} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 font-normal outline-none focus:border-violet-400"><option value="merge">合并多个 PDF</option><option value="split">按页拆分为 ZIP</option><option value="compress">重新压缩 PDF</option></select></label>}
+        <input ref={inputRef} type="file" accept={selectedTool.accept} multiple={Boolean(selectedTool.multiple && pdfBatchMode === "merge")} className="sr-only" onChange={(event) => { chooseFiles(event.target.files); event.currentTarget.value = ""; }} />
+        <button type="button" disabled={processing} onClick={() => inputRef.current?.click()} className="flex min-h-36 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/40 px-5 py-6 text-center transition hover:border-violet-400 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-600"><UploadCloud className="h-5 w-5" /></span><span className="mt-3 text-sm font-semibold text-slate-800">{files.length ? `已选择 ${files.length} 个文件` : selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" ? "选择两个或更多 PDF" : "点击选择文件"}</span><span className="mt-1 max-w-md break-all text-xs leading-5 text-slate-500">{files.length ? files.map((file) => file.name).join("、") : "文件总大小不超过 50MB"}</span></button>
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">{selectedTool.warning}</div>
+        {(processing || progress > 0 || message) && <div className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3 text-xs"><span className={message.startsWith("处理失败") || message.includes("需要") ? "text-rose-600" : "text-slate-600"}>{message}</span><span className="shrink-0 font-semibold text-violet-600">{progress}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-600 transition-all duration-300" style={{ width: `${progress}%` }} /></div></div>}
+        <button type="button" disabled={processing || !files.length} onClick={() => void runTool()} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50">{processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}{processing ? "正在处理" : "验证激活码并开始转换"}</button>
+      </div></div></div>}
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialMode={auth.session ? "redeem" : "login"} />
     </section>
   );
 }
