@@ -49,8 +49,8 @@ Deno.serve(async (request) => {
       const codes = [randomCode()];
       const rows = await Promise.all(codes.map(async (code) => ({
         code_hash: await hashCode(code), code_prefix: `${code.slice(0, 4)}-••••-••••-${code.slice(-4)}`,
-        plan_type: "lifetime", validity_days: null,
-        conversion_limit: null, expires_at: null, note: String(body.note || "").slice(0, 200) || null,
+        plan_type: "credits", validity_days: null,
+        conversion_limit: 5, expires_at: null, note: String(body.note || "").slice(0, 200) || null,
       })));
       const { error } = await service.from("redemption_codes").insert(rows);
       if (error) throw error;
@@ -64,7 +64,19 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === "update-user") {
-      const { error } = await service.from("entitlements").upsert({ user_id: body.userId, plan_type: "lifetime", activated_at: new Date().toISOString(), expires_at: null, remaining_conversions: null, status: "active", updated_at: new Date().toISOString() });
+      const { data: target, error: userError } = await service.auth.admin.getUserById(String(body.userId));
+      if (userError) throw userError;
+      const owner = target.user?.email?.toLowerCase() === "3819837002@qq.com";
+      const { error } = await service.from("entitlements").upsert({
+        user_id: body.userId,
+        plan_type: owner ? "lifetime" : "credits",
+        activated_at: new Date().toISOString(),
+        expires_at: null,
+        remaining_conversions: owner ? null : 5,
+        status: "active",
+        source_code_id: null,
+        updated_at: new Date().toISOString(),
+      });
       if (error) throw error;
       return json(request, { ok: true });
     }
