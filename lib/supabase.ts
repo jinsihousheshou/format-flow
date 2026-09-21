@@ -33,15 +33,23 @@ export const sessionStorageKey = "format-flow-auth-session";
 
 export async function supabaseRequest<T>(path: string, init: RequestInit = {}, accessToken?: string): Promise<T> {
   if (!isSupabaseConfigured) throw new Error("尚未配置 Supabase，请先填写环境变量。");
-  const response = await fetch(`${supabaseUrl}${path}`, {
-    ...init,
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${accessToken || supabaseAnonKey}`,
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${supabaseUrl}${path}`, {
+      ...init,
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken || supabaseAnonKey}`,
+        "Content-Type": "application/json",
+        ...init.headers,
+      },
+    });
+  } catch {
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    throw new Error(offline
+      ? "当前网络已断开，请恢复网络后重试。"
+      : "账号服务暂时无法连接，请稍后重试或联系管理员。");
+  }
   const payload = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
     const message = payload?.message || payload?.msg || payload?.error_description || payload?.error || "请求失败，请稍后重试。";
