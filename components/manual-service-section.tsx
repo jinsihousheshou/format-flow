@@ -20,6 +20,24 @@ const tools: ToolItem[] = [
 
 function extensionOf(file: File) { return file.name.split(".").pop()?.toLowerCase() || "unknown"; }
 
+const allowedExtensions: Record<ToolId, string[]> = {
+  "pdf-office": ["pdf"],
+  ocr: ["jpg", "jpeg", "png", "webp", "pdf"],
+  "word-format": ["docx", "txt"],
+  resume: ["docx", "txt"],
+  "ppt-format": ["pptx"],
+  "pdf-batch": ["pdf"],
+};
+
+function invalidFileMessage(tool: ToolItem, selected: File[]) {
+  const invalid = selected.find((file) => !allowedExtensions[tool.id].includes(extensionOf(file)));
+  if (!invalid) return "";
+  if (tool.id === "ocr") return `“${invalid.name}”不是图片或 PDF。请上传 JPG、PNG、WEBP 或扫描版 PDF；Word 文档请使用“Word 规范排版”。`;
+  if (tool.id === "word-format" || tool.id === "resume") return `“${invalid.name}”格式不支持。请上传 DOCX 或 TXT 文件。`;
+  if (tool.id === "ppt-format") return `“${invalid.name}”格式不支持。请上传 PPTX 文件。`;
+  return `“${invalid.name}”格式不支持。请上传 PDF 文件。`;
+}
+
 export default function ManualServiceSection() {
   const auth = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +62,8 @@ export default function ManualServiceSection() {
     if (!selectedTool || !list?.length) return;
     const chosen = Array.from(list);
     const selected = selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" ? chosen : chosen.slice(0, 1);
+    const invalidMessage = invalidFileMessage(selectedTool, selected);
+    if (invalidMessage) { setMessage(invalidMessage); setFiles([]); setProgress(0); return; }
     if (selected.reduce((sum, file) => sum + file.size, 0) > 50 * 1024 * 1024) { setMessage("文件总大小超过 50MB，请选择更小的文件。"); setFiles([]); return; }
     setFiles(selected); setMessage(""); setProgress(0);
   };
@@ -59,6 +79,8 @@ export default function ManualServiceSection() {
 
   const runTool = async () => {
     if (!selectedTool || !files.length || processing) return;
+    const invalidMessage = invalidFileMessage(selectedTool, files);
+    if (invalidMessage) { setMessage(invalidMessage); setFiles([]); setProgress(0); return; }
     if (selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" && files.length < 2) { setMessage("合并至少需要选择 2 个 PDF 文件。"); return; }
     setProcessing(true); setProgress(2); setMessage("正在验证激活权限...");
     let conversionId: string | null = null;
@@ -102,7 +124,7 @@ export default function ManualServiceSection() {
         <input ref={inputRef} type="file" accept={selectedTool.accept} multiple={Boolean(selectedTool.multiple && pdfBatchMode === "merge")} className="sr-only" onChange={(event) => { chooseFiles(event.target.files); event.currentTarget.value = ""; }} />
         <button type="button" disabled={processing} onClick={() => inputRef.current?.click()} className="flex min-h-36 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/40 px-5 py-6 text-center transition hover:border-violet-400 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-600"><UploadCloud className="h-5 w-5" /></span><span className="mt-3 text-sm font-semibold text-slate-800">{files.length ? `已选择 ${files.length} 个文件` : selectedTool.id === "pdf-batch" && pdfBatchMode === "merge" ? "选择两个或更多 PDF" : "点击选择文件"}</span><span className="mt-1 max-w-md break-all text-xs leading-5 text-slate-500">{files.length ? files.map((file) => file.name).join("、") : "文件总大小不超过 50MB"}</span></button>
         <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">{selectedTool.warning}</div>
-        {(processing || progress > 0 || message) && <div className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3 text-xs"><span className={message.startsWith("处理失败") || message.includes("需要") ? "text-rose-600" : "text-slate-600"}>{message}</span><span className="shrink-0 font-semibold text-violet-600">{progress}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-600 transition-all duration-300" style={{ width: `${progress}%` }} /></div></div>}
+        {(processing || progress > 0 || message) && <div className="rounded-xl bg-slate-50 p-4"><div className="flex items-center justify-between gap-3 text-xs"><span className={message.startsWith("处理失败") || message.includes("需要") || message.includes("不支持") ? "text-rose-600" : "text-slate-600"}>{message}</span><span className="shrink-0 font-semibold text-violet-600">{progress}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-600 transition-all duration-300" style={{ width: `${progress}%` }} /></div></div>}
         <button type="button" disabled={processing || !files.length} onClick={() => void runTool()} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50">{processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}{processing ? "正在处理" : "验证激活码并开始转换"}</button>
       </div></div></div>}
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} initialMode={auth.session ? "redeem" : "login"} />
