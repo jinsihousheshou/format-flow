@@ -26,11 +26,13 @@ import {
 import Link from "next/link";
 import AuthModal from "../components/auth-modal";
 import { useAuth } from "../components/auth-provider";
+import ManualServiceSection from "../components/manual-service-section";
 import DocumentShowcaseCarousel from "../components/ui/document-showcase-carousel";
 import { useRef, useState } from "react";
 
 const navItems = [
   { label: "首页", href: "#" },
+  { label: "人工精修", href: "#manual-services" },
   { label: "作品展示", href: "#showcase" },
   { label: "视频下载", href: "/video-download/" },
   { label: "音频下载", href: "/audio-download/" },
@@ -579,18 +581,18 @@ export default function Home() {
       <section className="relative z-10 mx-auto max-w-5xl px-5 pb-10 pt-16 text-center sm:px-8 sm:pt-20 lg:pt-24">
         <div className="fade-up inline-flex items-center gap-2 rounded-full border border-violet-200/70 bg-white/80 px-3.5 py-1.5 text-xs font-semibold text-violet-700 shadow-sm backdrop-blur">
           <Sparkles className="h-3.5 w-3.5" />
-          简单、高效的文件处理体验
+          自动转换 + 人工精修
         </div>
         <h1 className="fade-up-delay mt-6 text-[42px] font-bold leading-[1.12] tracking-[-0.045em] text-slate-950 sm:text-6xl lg:text-[68px]">
-          文件格式<span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">转换</span>
+          文件处理，<span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">交付更省心</span>
         </h1>
         <p className="fade-up-delay-2 mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-500 sm:text-lg">
-          简单、安全、高效的在线文件处理工具
-          <span className="hidden sm:inline">，购买激活后即可长期使用</span>
+          简单文件自己转换，复杂排版交给人工精修
+          <span className="hidden sm:inline">，先看文件再报价，交付内容提前确认</span>
         </p>
 
         <div className="fade-up-delay-2 mx-auto mt-7 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
-          {["多种格式支持", "文件本地安全处理", "购买后长期使用"].map((benefit) => <span key={benefit} className="flex items-center gap-2 rounded-xl border border-violet-100 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm"><Check className="h-4 w-4 shrink-0 text-emerald-500" />{benefit}</span>)}
+          {["自动工具本地处理", "复杂文件人工校对", "先确认价格与时间"].map((benefit) => <span key={benefit} className="flex items-center gap-2 rounded-xl border border-violet-100 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm"><Check className="h-4 w-4 shrink-0 text-emerald-500" />{benefit}</span>)}
         </div>
 
         <div className="fade-up-delay-2 mx-auto mt-10 max-w-3xl sm:mt-12">
@@ -780,6 +782,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <ManualServiceSection />
 
       <section id="showcase" className="relative z-10 mx-auto max-w-7xl scroll-mt-24 px-5 pb-8 pt-4 sm:px-8 sm:pt-8 lg:px-10">
         <div className="overflow-hidden rounded-[28px] border border-violet-100 bg-white shadow-[0_18px_55px_rgba(76,58,154,0.09)]">
