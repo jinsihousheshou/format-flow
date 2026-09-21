@@ -214,7 +214,30 @@ export async function convertPdfToOffice(file: File, format: PdfOfficeFormat, up
 
 async function fileToOcrImages(file: File, update: ProgressUpdate) {
   if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) return renderPdfPageDataUrls(file, update);
-  return [{ data: URL.createObjectURL(file), width: 1, height: 1 }];
+  update(4, "正在放大文字并增强图片对比度...");
+  const source = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("无法读取图片，请确认文件没有损坏。"));
+      element.src = source;
+    });
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = Math.min(2, Math.max(1, 2600 / Math.max(longestSide, 1)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("当前浏览器无法处理该图片。");
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.filter = "grayscale(1) contrast(1.45) brightness(1.08)";
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return [{ data: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height }];
+  } finally {
+    URL.revokeObjectURL(source);
+  }
 }
 
 export async function recognizeFile(file: File, output: OcrOutput, update: ProgressUpdate) {
@@ -226,6 +249,7 @@ export async function recognizeFile(file: File, output: OcrOutput, update: Progr
       if (event.status === "recognizing text") update(Math.max(8, Math.min(92, Math.round(event.progress * 84) + 8)), `正在识别文字 ${Math.round(event.progress * 100)}%...`);
     },
   });
+  await worker.setParameters({ preserve_interword_spaces: "1", user_defined_dpi: "300" });
   const pages: string[][] = [];
   try {
     for (let index = 0; index < images.length; index += 1) {
